@@ -408,15 +408,15 @@
         <img class="logo-learnvia" src="../assets/Learnvia - principal logo.png" alt="Learnvia">
 
         <div class="kpi-card kpi-1">
-            <div class="kpi-number">933</div>
+            <div class="kpi-number" id="kpi-institutions">933</div>
             <div class="kpi-label">Total Institutions</div>
         </div>
         <div class="kpi-card kpi-2">
-            <div class="kpi-number">9</div>
+            <div class="kpi-number" id="kpi-regions">9</div>
             <div class="kpi-label">Regions Covered</div>
         </div>
         <div class="kpi-card kpi-3">
-            <div class="kpi-number">10.7M</div>
+            <div class="kpi-number" id="kpi-fte">10.7M</div>
             <div class="kpi-label">Total FTE Enrollment</div>
         </div>
 
@@ -533,5 +533,20 @@
             <img class="footer-logo" src="../assets/logo_pip.png" alt="Partner In Publishing">
         </footer>
     </div>
+
+    <script>
+        // Update KPIs from dynamic data if available
+        (function() {
+            if (window.BMGF_DATA && window.BMGF_DATA.kpis) {
+                const kpis = window.BMGF_DATA.kpis;
+
+                // Total Institutions
+                const instEl = document.getElementById('kpi-institutions');
+                if (instEl && kpis.total_institutions) {
+                    instEl.textContent = Number(kpis.total_institutions).toLocaleString();
+                }
+            }
+        })();
+    </script>
 </body>
 </html>

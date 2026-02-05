@@ -114,7 +114,8 @@
     <div id="tooltip" class="tooltip"></div>
 
     <script>
-        const config = {
+        // Default configuration
+        const defaultConfig = {
             labels: ['Calculus I', 'Calculus II'],
             values: [66, 34],
             realValues: ['1.19M', '615K'],
@@ -122,6 +123,37 @@
             total: '1.8M',
             totalLabel: 'Calc Enroll'
         };
+
+        // Build config from dynamic data if available
+        function buildConfig() {
+            if (window.BMGF_DATA && window.BMGF_DATA.kpis) {
+                const kpis = window.BMGF_DATA.kpis;
+                const calc1 = kpis.calc1_enrollment || 1190000;
+                const calc2 = kpis.calc2_enrollment || 615000;
+                const total = calc1 + calc2;
+
+                const formatValue = (val) => {
+                    if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
+                    if (val >= 1000) return Math.round(val / 1000) + 'K';
+                    return val.toString();
+                };
+
+                return {
+                    labels: ['Calculus I', 'Calculus II'],
+                    values: [
+                        Math.round(kpis.calc1_share || (calc1 / total * 100)),
+                        Math.round(kpis.calc2_share || (calc2 / total * 100))
+                    ],
+                    realValues: [formatValue(calc1), formatValue(calc2)],
+                    colors: ['#008384', '#4A81A8'],
+                    total: formatValue(total),
+                    totalLabel: 'Calc Enroll'
+                };
+            }
+            return defaultConfig;
+        }
+
+        const config = buildConfig();
 
         const svg = document.getElementById('radial-chart');
         const legend = document.getElementById('legend');

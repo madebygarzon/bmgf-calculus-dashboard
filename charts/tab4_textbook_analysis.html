@@ -377,15 +377,15 @@
         <img class="logo-learnvia" src="../assets/Learnvia - principal logo.png" alt="Learnvia">
 
         <div class="kpi-card kpi-1">
-            <div class="kpi-number">824</div>
+            <div class="kpi-number" id="kpi-textbooks">824</div>
             <div class="kpi-label">Total Textbooks</div>
         </div>
         <div class="kpi-card kpi-2">
-            <div class="kpi-number">$143</div>
+            <div class="kpi-number" id="kpi-avg-price">$143</div>
             <div class="kpi-label">Average Price</div>
         </div>
         <div class="kpi-card kpi-3">
-            <div class="kpi-number">10</div>
+            <div class="kpi-number" id="kpi-publishers">10</div>
             <div class="kpi-label">Publishers</div>
         </div>
 
@@ -486,5 +486,30 @@
             <img class="footer-logo" src="../assets/logo_pip.png" alt="Partner In Publishing">
         </footer>
     </div>
+
+    <script>
+        // Update KPIs from dynamic data if available
+        (function() {
+            if (window.BMGF_DATA && window.BMGF_DATA.publishers) {
+                const publishers = window.BMGF_DATA.publishers;
+
+                // Number of publishers
+                const pubEl = document.getElementById('kpi-publishers');
+                if (pubEl) {
+                    pubEl.textContent = publishers.length;
+                }
+
+                // Calculate average price (excluding free/OER)
+                const paidPublishers = publishers.filter(p => p.avg_price > 0);
+                if (paidPublishers.length > 0) {
+                    const avgPrice = paidPublishers.reduce((sum, p) => sum + p.avg_price, 0) / paidPublishers.length;
+                    const avgPriceEl = document.getElementById('kpi-avg-price');
+                    if (avgPriceEl) {
+                        avgPriceEl.textContent = '$' + Math.round(avgPrice);
+                    }
+                }
+            }
+        })();
+    </script>
 </body>
 </html>
