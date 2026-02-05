@@ -1,0 +1,342 @@
+<?php
+/**
+ * BMGF Data Manager
+ * Manages all dashboard data with defaults and WordPress options storage
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class BMGF_Data_Manager {
+
+    private static ?BMGF_Data_Manager $instance = null;
+
+    private const OPTION_KEY = 'bmgf_dashboard_data';
+
+    public static function get_instance(): self {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function __construct() {}
+
+    /**
+     * Get all dashboard data (saved or defaults)
+     */
+    public function get_all_data(): array {
+        $saved = get_option(self::OPTION_KEY, []);
+        $defaults = $this->get_defaults();
+
+        return $this->merge_deep($defaults, $saved);
+    }
+
+    /**
+     * Get a specific section of data
+     */
+    public function get_section(string $section): array {
+        $all_data = $this->get_all_data();
+        return $all_data[$section] ?? [];
+    }
+
+    /**
+     * Save a section of data
+     */
+    public function save_section(string $section, array $data): bool {
+        $all_data = get_option(self::OPTION_KEY, []);
+        $all_data[$section] = $data;
+        return update_option(self::OPTION_KEY, $all_data);
+    }
+
+    /**
+     * Save all data at once
+     */
+    public function save_all(array $data): bool {
+        return update_option(self::OPTION_KEY, $data);
+    }
+
+    /**
+     * Reset to defaults
+     */
+    public function reset_to_defaults(): bool {
+        return delete_option(self::OPTION_KEY);
+    }
+
+    /**
+     * Deep merge arrays (saved values override defaults)
+     */
+    private function merge_deep(array $defaults, array $saved): array {
+        $result = $defaults;
+
+        foreach ($saved as $key => $value) {
+            if (is_array($value) && isset($result[$key]) && is_array($result[$key])) {
+                $result[$key] = $this->merge_deep($result[$key], $value);
+            } else {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get all default data
+     */
+    public function get_defaults(): array {
+        return [
+            'kpis' => $this->get_default_kpis(),
+            'regional_data' => $this->get_default_regional_data(),
+            'sector_data' => $this->get_default_sector_data(),
+            'publishers' => $this->get_default_publishers(),
+            'top_institutions' => $this->get_default_top_institutions(),
+            'top_textbooks' => $this->get_default_top_textbooks(),
+            'period_data' => $this->get_default_period_data(),
+            'institution_size_data' => $this->get_default_institution_size_data(),
+            'filters' => $this->get_default_filters(),
+        ];
+    }
+
+    /**
+     * Default KPIs (12 main metrics)
+     */
+    private function get_default_kpis(): array {
+        return [
+            'total_institutions' => 933,
+            'total_enrollment' => 1817722,
+            'calc1_enrollment' => 1202783,
+            'calc1_share' => 66.2,
+            'calc2_enrollment' => 614939,
+            'calc2_share' => 33.8,
+            'avg_price_calc1' => 125.50,
+            'avg_price_calc2' => 118.75,
+            'commercial_share' => 78,
+            'oer_share' => 22,
+            'digital_share' => 85,
+            'print_share' => 15,
+        ];
+    }
+
+    /**
+     * Default regional data for Calc I and Calc II
+     */
+    private function get_default_regional_data(): array {
+        return [
+            'calc1' => [
+                ['name' => 'Southeast', 'percentage' => 29, 'value' => 346181],
+                ['name' => 'Far West', 'percentage' => 19, 'value' => 229591],
+                ['name' => 'Mid East', 'percentage' => 16, 'value' => 193514],
+                ['name' => 'Great Lakes', 'percentage' => 13, 'value' => 152706],
+                ['name' => 'Southwest', 'percentage' => 12, 'value' => 138181],
+                ['name' => 'Rocky Mountains', 'percentage' => 6, 'value' => 65814],
+                ['name' => 'Plains', 'percentage' => 3, 'value' => 36024],
+                ['name' => 'New England', 'percentage' => 2, 'value' => 25083],
+                ['name' => 'Outlying Areas', 'percentage' => 0, 'value' => 825],
+            ],
+            'calc2' => [
+                ['name' => 'Southeast', 'percentage' => 28, 'value' => 172183],
+                ['name' => 'Far West', 'percentage' => 20, 'value' => 122988],
+                ['name' => 'Mid East', 'percentage' => 17, 'value' => 104540],
+                ['name' => 'Great Lakes', 'percentage' => 13, 'value' => 79942],
+                ['name' => 'Southwest', 'percentage' => 11, 'value' => 67643],
+                ['name' => 'Rocky Mountains', 'percentage' => 5, 'value' => 30747],
+                ['name' => 'Plains', 'percentage' => 3, 'value' => 18448],
+                ['name' => 'New England', 'percentage' => 2, 'value' => 12299],
+                ['name' => 'Outlying Areas', 'percentage' => 1, 'value' => 6149],
+            ],
+        ];
+    }
+
+    /**
+     * Default sector data
+     */
+    private function get_default_sector_data(): array {
+        return [
+            'calc1' => [
+                ['name' => '4-Year Public', 'percentage' => 70, 'value' => 836560],
+                ['name' => '2-Year Public', 'percentage' => 17, 'value' => 201591],
+                ['name' => '4-Year Private', 'percentage' => 12, 'value' => 149768],
+            ],
+            'calc2' => [
+                ['name' => '4-Year Public', 'percentage' => 72, 'value' => 442756],
+                ['name' => '2-Year Public', 'percentage' => 14, 'value' => 86091],
+                ['name' => '4-Year Private', 'percentage' => 14, 'value' => 86091],
+            ],
+        ];
+    }
+
+    /**
+     * Default publisher data
+     */
+    private function get_default_publishers(): array {
+        return [
+            [
+                'name' => 'Cengage',
+                'market_share' => 39,
+                'enrollment' => 697000,
+                'avg_price' => 142.50,
+                'color' => '#008384',
+            ],
+            [
+                'name' => 'Pearson',
+                'market_share' => 23,
+                'enrollment' => 410000,
+                'avg_price' => 155.00,
+                'color' => '#234A5D',
+            ],
+            [
+                'name' => 'Other',
+                'market_share' => 18,
+                'enrollment' => 331000,
+                'avg_price' => 95.00,
+                'color' => '#92A4CF',
+            ],
+            [
+                'name' => 'Wiley',
+                'market_share' => 9,
+                'enrollment' => 158000,
+                'avg_price' => 148.00,
+                'color' => '#4A81A8',
+            ],
+            [
+                'name' => 'OpenStax',
+                'market_share' => 5,
+                'enrollment' => 84000,
+                'avg_price' => 0,
+                'color' => '#7FBFC0',
+            ],
+            [
+                'name' => 'Macmillan',
+                'market_share' => 3,
+                'enrollment' => 62000,
+                'avg_price' => 135.00,
+                'color' => '#D3DEF6',
+            ],
+        ];
+    }
+
+    /**
+     * Default top 10 institutions
+     */
+    private function get_default_top_institutions(): array {
+        return [
+            ['name' => 'Univ of Michigan', 'enrollment' => 98000],
+            ['name' => 'Univ of Florida', 'enrollment' => 92000],
+            ['name' => 'Florida State Univ', 'enrollment' => 89000],
+            ['name' => 'UCF', 'enrollment' => 67000],
+            ['name' => 'UT Dallas', 'enrollment' => 57000],
+            ['name' => 'Rutgers', 'enrollment' => 46000],
+            ['name' => 'Lone Star College', 'enrollment' => 25000],
+            ['name' => 'Oregon State', 'enrollment' => 24000],
+            ['name' => 'CU Boulder', 'enrollment' => 24000],
+            ['name' => 'Univ of Mississippi', 'enrollment' => 23000],
+        ];
+    }
+
+    /**
+     * Default top 10 textbooks
+     */
+    private function get_default_top_textbooks(): array {
+        return [
+            ['name' => 'MyLab Math Calculus', 'publisher' => 'Pearson', 'enrollment' => 133310],
+            ['name' => 'Calculus Single-Variable', 'publisher' => 'Wiley', 'enrollment' => 98775],
+            ['name' => 'Thomas Calculus', 'publisher' => 'Pearson', 'enrollment' => 84617],
+            ['name' => 'WebAssign Calculus', 'publisher' => 'Cengage', 'enrollment' => 63039],
+            ['name' => 'Calculus Single+Multi', 'publisher' => 'Wiley', 'enrollment' => 61642],
+            ['name' => 'Knewton Alta Calculus', 'publisher' => 'Other', 'enrollment' => 56726],
+            ['name' => 'Calculus OpenStax', 'publisher' => 'OpenStax', 'enrollment' => 52834],
+            ['name' => 'Stewart Calculus', 'publisher' => 'Cengage', 'enrollment' => 48521],
+            ['name' => 'Larson Calculus', 'publisher' => 'Cengage', 'enrollment' => 42156],
+            ['name' => 'Calculus Business', 'publisher' => 'Pearson', 'enrollment' => 38420],
+        ];
+    }
+
+    /**
+     * Default period data (Calc I vs II by period)
+     */
+    private function get_default_period_data(): array {
+        return [
+            ['period' => 'Fall 2025', 'calc1' => 547, 'calc2' => 269],
+            ['period' => 'Spring 2025', 'calc1' => 472, 'calc2' => 233],
+            ['period' => 'Winter 2025', 'calc1' => 174, 'calc2' => 85],
+            ['period' => 'Summer 2025', 'calc1' => 105, 'calc2' => 51],
+        ];
+    }
+
+    /**
+     * Default institution size data
+     */
+    private function get_default_institution_size_data(): array {
+        return [
+            ['size' => 'Large (>20K)', 'calc1' => 485, 'calc2' => 240],
+            ['size' => 'Medium (5-20K)', 'calc1' => 412, 'calc2' => 203],
+            ['size' => 'Small (1-5K)', 'calc1' => 298, 'calc2' => 147],
+            ['size' => 'Very Small (<1K)', 'calc1' => 121, 'calc2' => 62],
+        ];
+    }
+
+    /**
+     * Default filter options
+     */
+    private function get_default_filters(): array {
+        return [
+            'states' => [
+                'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California',
+                'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia',
+                'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
+                'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland',
+                'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri',
+                'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey',
+                'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio',
+                'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina',
+                'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
+                'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming',
+            ],
+            'regions' => [
+                'Southeast', 'Far West', 'Mid East', 'Great Lakes',
+                'Southwest', 'Rocky Mountains', 'Plains', 'New England', 'Outlying Areas',
+            ],
+            'sectors' => [
+                '4-Year Public',
+                '2-Year Public',
+                '4-Year Private',
+            ],
+            'publishers' => [
+                'Cengage', 'Pearson', 'Wiley', 'OpenStax', 'Macmillan', 'Other',
+            ],
+            'courses' => [
+                'Calculus I',
+                'Calculus II',
+                'Calculus I & II',
+            ],
+            'price_ranges' => [
+                'Free (OER)',
+                '$1 - $50',
+                '$51 - $100',
+                '$101 - $150',
+                '$151 - $200',
+                '$200+',
+            ],
+        ];
+    }
+
+    /**
+     * Get data formatted for JavaScript injection
+     */
+    public function get_js_data(): array {
+        $data = $this->get_all_data();
+
+        return [
+            'kpis' => $data['kpis'],
+            'regional' => $data['regional_data'],
+            'sectors' => $data['sector_data'],
+            'publishers' => $data['publishers'],
+            'topInstitutions' => $data['top_institutions'],
+            'topTextbooks' => $data['top_textbooks'],
+            'periods' => $data['period_data'],
+            'institutionSizes' => $data['institution_size_data'],
+            'filters' => $data['filters'],
+        ];
+    }
+}
