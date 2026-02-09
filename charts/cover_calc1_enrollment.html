@@ -261,6 +261,38 @@
 
         createLollipopChart('regionChart', regionData, 30);
         createLollipopChart('sectorChart', sectorData, 70);
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const stateToRegion = window.BMGF_STATE_TO_REGION || {};
+            const regionTotals = {};
+
+            filteredData.forEach(d => {
+                const region = stateToRegion[d.state];
+                if (region) {
+                    regionTotals[region] = (regionTotals[region] || 0) + (d.calc_i || 0);
+                }
+            });
+
+            const totalCalc1 = Object.values(regionTotals).reduce((s, v) => s + v, 0);
+            if (totalCalc1 === 0) return;
+
+            const newRegionData = Object.entries(regionTotals)
+                .map(([name, value]) => ({
+                    name: name,
+                    percentage: Math.round(value / totalCalc1 * 100),
+                    value: value
+                }))
+                .sort((a, b) => b.value - a.value);
+
+            // Clear and re-render region chart
+            const regionContainer = document.getElementById('regionChart');
+            regionContainer.innerHTML = '';
+            createLollipopChart('regionChart', newRegionData, Math.max(...newRegionData.map(d => d.percentage), 30));
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

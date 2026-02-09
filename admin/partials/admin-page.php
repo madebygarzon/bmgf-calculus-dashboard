@@ -14,6 +14,7 @@ if (!defined('ABSPATH')) {
     </div>
 
     <nav class="bmgf-tabs-nav">
+        <button type="button" class="bmgf-tab-btn" data-tab="upload_data">Upload Data</button>
         <button type="button" class="bmgf-tab-btn" data-tab="kpis">KPIs</button>
         <button type="button" class="bmgf-tab-btn" data-tab="regional_data">Regional Data</button>
         <button type="button" class="bmgf-tab-btn" data-tab="sector_data">Sector Data</button>
@@ -26,6 +27,7 @@ if (!defined('ABSPATH')) {
     </nav>
 
     <div class="bmgf-tabs-content">
+        <?php include BMGF_DASHBOARD_PATH . 'admin/partials/tab-upload.php'; ?>
         <?php include BMGF_DASHBOARD_PATH . 'admin/partials/tab-kpis.php'; ?>
         <?php include BMGF_DASHBOARD_PATH . 'admin/partials/tab-regional.php'; ?>
         <?php include BMGF_DASHBOARD_PATH . 'admin/partials/tab-sectors.php'; ?>

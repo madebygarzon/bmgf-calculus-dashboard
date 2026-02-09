@@ -283,7 +283,7 @@
     </div>
 
     <script>
-        const stateData = [
+        const allStateData = [
     {"state": "Florida", "code": "FL", "lat": 27.766279, "lon": -81.686783, "lon_left": -82.33678300000001, "lon_right": -81.036783, "total": 308915, "total_fmt": "308K", "total_full": "308.915", "calc_i": 203239, "calc_i_fmt": "203K", "calc_ii": 105676, "calc_ii_fmt": "105K", "institutions": 41, "pub1": "Other", "pub1_enr": 118965, "pub2": "Cengage", "pub2_enr": 82171, "pub3": "Pearson", "pub3_enr": 75980},
     {"state": "California", "code": "CA", "lat": 36.116203, "lon": -119.681564, "lon_left": -120.331564, "lon_right": -119.03156399999999, "total": 247717, "total_fmt": "247K", "total_full": "247.717", "calc_i": 170772, "calc_i_fmt": "170K", "calc_ii": 76945, "calc_ii_fmt": "76K", "institutions": 135, "pub1": "Cengage", "pub1_enr": 149430, "pub2": "Pearson", "pub2_enr": 35826, "pub3": "Other", "pub3_enr": 26692},
     {"state": "Texas", "code": "TX", "lat": 31.054487, "lon": -97.563461, "lon_left": -98.21346100000001, "lon_right": -96.913461, "total": 148396, "total_fmt": "148K", "total_full": "148.396", "calc_i": 94032, "calc_i_fmt": "94K", "calc_ii": 54364, "calc_ii_fmt": "54K", "institutions": 68, "pub1": "Cengage", "pub1_enr": 75264, "pub2": "Pearson", "pub2_enr": 46591, "pub3": "Other", "pub3_enr": 11023},
@@ -356,6 +356,7 @@
             maxZoom: 10
         };
 
+        let stateData = allStateData;
         let currentView = 'enrollment';
         let deckgl = null;
 
@@ -596,16 +597,16 @@
                     <div style="background: linear-gradient(90deg, rgba(0, 240, 212, 0.12) 0%, transparent 100%); border-left: 4px solid #00F0D4; padding: 12px 14px; border-radius: 0 10px 10px 0; margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="color: #00F0D4; font-weight: 700; font-size: 13px;">CALC I</span>
-                            <span style="color: #FFFFFF; font-weight: 800; font-size: 20px;">${object.calc_i_full}</span>
+                            <span style="color: #FFFFFF; font-weight: 800; font-size: 20px;">${object.calc_i_fmt}</span>
                         </div>
-                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${object.calc_i_pct}% of state total</div>
+                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${(object.calc_i / object.total * 100).toFixed(1)}% of state total</div>
                     </div>
                     <div style="background: linear-gradient(90deg, rgba(146, 164, 207, 0.12) 0%, transparent 100%); border-left: 4px solid #92A4CF; padding: 12px 14px; border-radius: 0 10px 10px 0; margin-bottom: 14px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="color: #92A4CF; font-weight: 700; font-size: 13px;">CALC II</span>
-                            <span style="color: #FFFFFF; font-weight: 800; font-size: 20px;">${object.calc_ii_full}</span>
+                            <span style="color: #FFFFFF; font-weight: 800; font-size: 20px;">${object.calc_ii_fmt}</span>
                         </div>
-                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${object.calc_ii_pct}% of state total</div>
+                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${(object.calc_ii / object.total * 100).toFixed(1)}% of state total</div>
                     </div>
                     <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div>
@@ -848,6 +849,20 @@
         }
 
         init();
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) {
+                stateData = allStateData;
+            } else {
+                // Match filtered states to our local stateData (which has lat/lon)
+                const filteredStates = new Set(filteredData.map(d => d.state));
+                stateData = allStateData.filter(d => filteredStates.has(d.state));
+            }
+            // Re-render current view with filtered data
+            setView(currentView);
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

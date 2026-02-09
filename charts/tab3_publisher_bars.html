@@ -167,6 +167,51 @@
                 bar.style.width = `${width}%`;
             });
         }, 300);
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            // Aggregate publisher enrollment from stateData
+            const pubTotals = {};
+            filteredData.forEach(d => {
+                [['pub1', 'pub1_enr'], ['pub2', 'pub2_enr'], ['pub3', 'pub3_enr']].forEach(([nameKey, enrKey]) => {
+                    const name = d[nameKey];
+                    const enr = d[enrKey] || 0;
+                    if (name && enr > 0) {
+                        pubTotals[name] = (pubTotals[name] || 0) + enr;
+                    }
+                });
+            });
+
+            const totalEnr = Object.values(pubTotals).reduce((s, v) => s + v, 0);
+            if (totalEnr === 0) return;
+
+            const pubClassMap = { 'Cengage': 'cengage', 'Pearson': 'pearson', 'OpenStax': 'openstax', 'Wiley': 'wiley' };
+            const newPubs = Object.entries(pubTotals)
+                .map(([name, enr]) => ({
+                    name: name,
+                    value: Math.round(enr / totalEnr * 100),
+                    class: pubClassMap[name] || 'other'
+                }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 5);
+
+            const newMax = Math.max(...newPubs.map(p => p.value));
+            const newMin = Math.min(...newPubs.map(p => p.value));
+
+            newPubs.forEach((pub, index) => {
+                const bar = document.getElementById(`bar-${index}`);
+                const row = bar ? bar.closest('.publisher-row') : null;
+                if (bar && row) {
+                    const barValue = bar.querySelector('.bar-value');
+                    if (barValue) barValue.textContent = pub.value + '%';
+                    const width = 18 + ((pub.value - newMin) / (Math.max(newMax - newMin, 1))) * 77;
+                    bar.style.width = width + '%';
+                }
+            });
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

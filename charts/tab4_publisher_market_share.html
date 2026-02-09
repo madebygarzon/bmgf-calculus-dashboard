@@ -259,6 +259,94 @@
             }
             requestAnimationFrame(update);
         }
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const pubTotals = {};
+            filteredData.forEach(d => {
+                [['pub1', 'pub1_enr'], ['pub2', 'pub2_enr'], ['pub3', 'pub3_enr']].forEach(([nameKey, enrKey]) => {
+                    const name = d[nameKey];
+                    const enr = d[enrKey] || 0;
+                    if (name && enr > 0) {
+                        pubTotals[name] = (pubTotals[name] || 0) + enr;
+                    }
+                });
+            });
+
+            const totalEnr = Object.values(pubTotals).reduce((s, v) => s + v, 0);
+            if (totalEnr === 0) return;
+
+            const pubColors = { 'Cengage': '#008384', 'Pearson': '#234A5D', 'Wiley': '#4A81A8', 'OpenStax': '#7FBFC0', 'Macmillan': '#D3DEF6' };
+            const formatVal = (v) => v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'K';
+
+            const sortedPubs = Object.entries(pubTotals)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6);
+
+            const newConfig = {
+                labels: sortedPubs.map(([n]) => n),
+                values: sortedPubs.map(([, e]) => Math.round(e / totalEnr * 100)),
+                realValues: sortedPubs.map(([, e]) => formatVal(e)),
+                colors: sortedPubs.map(([n]) => pubColors[n] || '#92A4CF'),
+                total: formatVal(totalEnr),
+                totalLabel: 'Enrollment'
+            };
+
+            svg.innerHTML = '';
+            legend.innerHTML = '';
+
+            svg.innerHTML = `
+                <text x="${cx}" y="${cy}" text-anchor="middle" class="center-text center-number">${newConfig.total}</text>
+                <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="center-label">${newConfig.totalLabel}</text>
+            `;
+
+            const newSorted = newConfig.values.map((v, i) => ({ value: v, index: i })).sort((a, b) => b.value - a.value);
+
+            newSorted.forEach((item, sortIndex) => {
+                const radius = startRadius + sortIndex * (barWidth + gap);
+                const percent = item.value / 100;
+                const sAngle = 135;
+                const maxSweep = 270;
+                const eAngle = sAngle + (maxSweep * percent);
+
+                const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                track.setAttribute('d', describeArc(cx, cy, radius, sAngle, sAngle + maxSweep));
+                track.setAttribute('class', 'radial-track');
+                track.setAttribute('stroke-width', barWidth);
+                svg.appendChild(track);
+
+                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                bar.setAttribute('class', 'radial-bar');
+                bar.setAttribute('stroke', newConfig.colors[item.index]);
+                bar.setAttribute('stroke-width', barWidth);
+                svg.appendChild(bar);
+                animateArc(bar, cx, cy, radius, sAngle, eAngle, 400);
+
+                bar.addEventListener('mouseenter', () => {
+                    tooltip.textContent = `${newConfig.labels[item.index]}: ${newConfig.realValues[item.index]} (${newConfig.values[item.index]}%)`;
+                    tooltip.classList.add('visible');
+                });
+                bar.addEventListener('mousemove', (e) => {
+                    tooltip.style.left = (e.clientX + 10) + 'px';
+                    tooltip.style.top = (e.clientY - 30) + 'px';
+                });
+                bar.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+            });
+
+            newSorted.forEach((item) => {
+                const li = document.createElement('div');
+                li.className = 'legend-item';
+                li.innerHTML = `
+                    <span class="legend-dot" style="background: ${newConfig.colors[item.index]}"></span>
+                    <span>${newConfig.labels[item.index]}</span>
+                    <span class="legend-value">${newConfig.values[item.index]}%</span>
+                `;
+                legend.appendChild(li);
+            });
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

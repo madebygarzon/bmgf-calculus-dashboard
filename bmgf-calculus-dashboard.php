@@ -3,7 +3,7 @@
  * Plugin Name: BMGF Calculus Market Dashboard
  * Plugin URI: https://partnerinpublishing.com
  * Description: Interactive dashboard for Math Education Market Analysis - Calculus textbook market data visualization.
- * Version: 5.0.0
+ * Version: 11.0.0
  * Author: Team Dev PIP
  * Author URI: https://partnerinpublishing.com
  * License: GPL v2 or later
@@ -23,6 +23,8 @@ define('BMGF_DASHBOARD_URL', plugin_dir_url(__FILE__));
 
 // Load required classes
 require_once BMGF_DASHBOARD_PATH . 'includes/class-bmgf-data-manager.php';
+require_once BMGF_DASHBOARD_PATH . 'includes/class-bmgf-xlsx-parser.php';
+require_once BMGF_DASHBOARD_PATH . 'includes/class-bmgf-data-mapper.php';
 require_once BMGF_DASHBOARD_PATH . 'includes/class-bmgf-admin.php';
 
 /**
@@ -158,6 +160,14 @@ class BMGF_Calculus_Dashboard {
         $content = str_replace('../assets/', $plugin_url . 'assets/', $content);
         $content = str_replace('src="assets/', 'src="' . $plugin_url . 'assets/', $content);
 
+        // Update JavaScript file sources (for filter-controller.js, state_data_updated.js, etc.)
+        // Only match simple filenames (no paths, no URLs) - e.g., "script.js" but not "https://..." or "path/script.js"
+        $content = preg_replace(
+            '/src="([a-zA-Z0-9_-]+\.js)"/',
+            'src="' . $plugin_url . 'charts/$1"',
+            $content
+        );
+
         // Update chart iframe sources
         $content = preg_replace(
             '/src="([^"]+\.html)"/',
@@ -232,7 +242,6 @@ class BMGF_Calculus_Dashboard {
         <div class="bmgf-dashboard-container">
             <style>
                 .bmgf-dashboard-container {
-                    padding-top: 120px;
                     --deep-insight: #008384;
                     --scholar-blue: #234A5D;
                     --coastal-clarity: #7FBFC0;

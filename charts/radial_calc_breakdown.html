@@ -255,6 +255,87 @@
             }
             requestAnimationFrame(update);
         }
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const calc1 = filteredData.reduce((sum, d) => sum + (d.calc_i || 0), 0);
+            const calc2 = filteredData.reduce((sum, d) => sum + (d.calc_ii || 0), 0);
+            const total = calc1 + calc2;
+            if (total === 0) return;
+
+            const formatValue = (val) => {
+                if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
+                if (val >= 1000) return Math.round(val / 1000) + 'K';
+                return val.toString();
+            };
+
+            const newConfig = {
+                labels: ['Calculus I', 'Calculus II'],
+                values: [Math.round(calc1 / total * 100), Math.round(calc2 / total * 100)],
+                realValues: [formatValue(calc1), formatValue(calc2)],
+                colors: ['#008384', '#4A81A8'],
+                total: formatValue(total),
+                totalLabel: 'Calc Enroll'
+            };
+
+            // Re-render
+            svg.innerHTML = '';
+            legend.innerHTML = '';
+
+            const newSorted = newConfig.values
+                .map((v, i) => ({ value: v, index: i }))
+                .sort((a, b) => b.value - a.value);
+
+            svg.innerHTML = `
+                <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="center-text center-number">${newConfig.total}</text>
+                <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="center-label">${newConfig.totalLabel}</text>
+            `;
+
+            newSorted.forEach((item, sortIndex) => {
+                const radius = startRadius + sortIndex * (barWidth + gap);
+                const percent = item.value / 100;
+                const sAngle = 135;
+                const maxSweep = 270;
+                const eAngle = sAngle + (maxSweep * percent);
+
+                const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                track.setAttribute('d', describeArc(cx, cy, radius, sAngle, sAngle + maxSweep));
+                track.setAttribute('class', 'radial-track');
+                track.setAttribute('stroke-width', barWidth);
+                svg.appendChild(track);
+
+                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                bar.setAttribute('class', 'radial-bar');
+                bar.setAttribute('stroke', newConfig.colors[item.index]);
+                bar.setAttribute('stroke-width', barWidth);
+                svg.appendChild(bar);
+                animateArc(bar, cx, cy, radius, sAngle, eAngle, 400);
+
+                bar.addEventListener('mouseenter', () => {
+                    tooltip.textContent = `${newConfig.labels[item.index]}: ${newConfig.realValues[item.index]} (${newConfig.values[item.index]}%)`;
+                    tooltip.classList.add('visible');
+                });
+                bar.addEventListener('mousemove', (e) => {
+                    tooltip.style.left = (e.clientX + 10) + 'px';
+                    tooltip.style.top = (e.clientY - 30) + 'px';
+                });
+                bar.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+            });
+
+            newSorted.forEach((item) => {
+                const li = document.createElement('div');
+                li.className = 'legend-item';
+                li.innerHTML = `
+                    <span class="legend-dot" style="background: ${newConfig.colors[item.index]}"></span>
+                    <span>${newConfig.labels[item.index]}</span>
+                    <span class="legend-value">${newConfig.values[item.index]}%</span>
+                `;
+                legend.appendChild(li);
+            });
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

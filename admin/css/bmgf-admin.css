@@ -529,3 +529,248 @@
     color: var(--bmgf-error);
     background: rgba(239, 68, 68, 0.1);
 }
+
+/* ============================================
+   Upload Tab Styles
+   ============================================ */
+
+.bmgf-upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.bmgf-upload-zone {
+    border: 2px dashed var(--bmgf-border);
+    border-radius: 12px;
+    padding: 30px;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    background: var(--bmgf-background);
+}
+
+.bmgf-upload-zone:hover {
+    border-color: var(--bmgf-primary);
+    background: rgba(0, 131, 132, 0.03);
+}
+
+.bmgf-upload-zone.bmgf-upload-dragover {
+    border-color: var(--bmgf-primary);
+    background: rgba(0, 131, 132, 0.08);
+    transform: scale(1.01);
+}
+
+.bmgf-upload-zone.bmgf-upload-has-file {
+    border-style: solid;
+    border-color: var(--bmgf-primary);
+    background: rgba(0, 131, 132, 0.04);
+}
+
+.bmgf-upload-zone.bmgf-upload-success {
+    border-color: var(--bmgf-success);
+}
+
+.bmgf-upload-zone.bmgf-upload-error {
+    border-color: var(--bmgf-error);
+}
+
+.bmgf-upload-zone-inner h3 {
+    margin: 12px 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--bmgf-secondary);
+}
+
+.bmgf-upload-zone-inner p {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--bmgf-text-muted);
+}
+
+.bmgf-upload-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(0, 131, 132, 0.1);
+    color: var(--bmgf-primary);
+}
+
+.bmgf-upload-icon .dashicons {
+    font-size: 28px;
+    width: 28px;
+    height: 28px;
+}
+
+.bmgf-upload-hint {
+    font-size: 11px !important;
+    color: var(--bmgf-text-muted) !important;
+    opacity: 0.7;
+}
+
+.bmgf-upload-file-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 16px;
+    background: rgba(16, 185, 129, 0.1);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #065F46;
+}
+
+.bmgf-upload-file-info .dashicons {
+    color: var(--bmgf-success);
+}
+
+.bmgf-upload-remove {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--bmgf-text-muted);
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.bmgf-upload-remove:hover {
+    color: var(--bmgf-error);
+}
+
+/* Progress bar */
+.bmgf-upload-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.bmgf-upload-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--bmgf-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.bmgf-upload-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--bmgf-primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.bmgf-upload-progress-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--bmgf-text-muted);
+    min-width: 40px;
+    text-align: right;
+}
+
+/* Upload actions */
+.bmgf-upload-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.bmgf-upload-actions .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+}
+
+/* Status messages */
+.bmgf-upload-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.bmgf-upload-status-success {
+    background: #ECFDF5;
+    color: #065F46;
+}
+
+.bmgf-upload-status-error {
+    background: #FEF2F2;
+    color: #991B1B;
+}
+
+.bmgf-upload-status-info {
+    background: #EFF6FF;
+    color: #1E40AF;
+}
+
+.bmgf-upload-status .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+/* Preview cards */
+.bmgf-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.bmgf-preview-card {
+    background: var(--bmgf-background);
+    border-radius: 8px;
+    padding: 16px;
+    border-left: 4px solid var(--bmgf-primary);
+}
+
+.bmgf-preview-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--bmgf-secondary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bmgf-preview-card-title .dashicons {
+    color: var(--bmgf-success);
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.bmgf-preview-card-value {
+    font-size: 12px;
+    color: var(--bmgf-text-muted);
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+@media (max-width: 782px) {
+    .bmgf-upload-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bmgf-upload-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .bmgf-preview-grid {
+        grid-template-columns: 1fr;
+    }
+}

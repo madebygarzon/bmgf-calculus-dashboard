@@ -83,6 +83,49 @@
         const config = { displayModeBar: false, responsive: true };
 
         Plotly.newPlot('chart', [trace], layout, config);
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const stateToRegion = window.BMGF_STATE_TO_REGION || {};
+            const regionAbbr = {
+                'Southeast': 'SE', 'Far West': 'FW', 'Mid East': 'ME',
+                'Great Lakes': 'GL', 'Southwest': 'SW', 'Plains': 'PL',
+                'New England': 'NE', 'Rocky Mountains': 'RM'
+            };
+
+            const regionMap = {};
+            filteredData.forEach(d => {
+                const region = stateToRegion[d.state];
+                if (region) {
+                    regionMap[region] = (regionMap[region] || 0) + (d.institutions || 0);
+                }
+            });
+
+            const newData = Object.entries(regionMap)
+                .map(([region, institutions]) => ({
+                    region: regionAbbr[region] || region.substring(0, 2),
+                    fullName: region,
+                    institutions: institutions
+                }))
+                .sort((a, b) => b.institutions - a.institutions);
+
+            Plotly.react('chart', [{
+                type: 'bar',
+                x: newData.map(d => d.region),
+                y: newData.map(d => d.institutions),
+                marker: {
+                    color: newData.map((d, i) => i < 3 ? '#4A81A8' : '#92A4CF'),
+                    line: { color: '#fff', width: 1 }
+                },
+                text: newData.map(d => d.institutions),
+                textposition: 'outside',
+                textfont: { family: 'Inter Tight', size: 10, color: '#234A5D' },
+                hovertemplate: newData.map(d => `<b>${d.fullName}</b><br>${d.institutions} institutions<extra></extra>`)
+            }], layout, config);
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

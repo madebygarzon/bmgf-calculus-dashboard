@@ -158,6 +158,43 @@
                 });
             }, 100);
         });
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const topStates = [...filteredData]
+                .sort((a, b) => b.total - a.total)
+                .slice(0, 8)
+                .map(d => ({
+                    state: d.state.length > 10 ? d.state.substring(0, 10) + '.' : d.state,
+                    calc1: Math.round((d.calc_i || 0) / 1000),
+                    calc2: Math.round((d.calc_ii || 0) / 1000)
+                }));
+
+            topStates.sort((a, b) => a.calc1 - b.calc1);
+
+            const newStates = topStates.map(d => d.state);
+            const newCalc1 = topStates.map(d => d.calc1);
+            const newCalc2 = topStates.map(d => d.calc2);
+
+            Plotly.animate('chart', {
+                data: [
+                    { x: topStates.flatMap(d => [d.calc2, d.calc1, null]), y: topStates.flatMap(d => [d.state, d.state, null]) },
+                    { x: newCalc2, y: newStates, text: newCalc2.map(v => v + 'K'), marker: { size: 12, color: '#4A81A8', line: { color: '#FFF', width: 2 } } },
+                    { x: newCalc1, y: newStates, text: newCalc1.map(v => v + 'K'), marker: { size: 12, color: '#008384', line: { color: '#FFF', width: 2 } } }
+                ],
+                traces: [0, 1, 2]
+            }, {
+                transition: { duration: 400, easing: 'cubic-out' },
+                frame: { duration: 400 }
+            });
+
+            Plotly.relayout('chart', {
+                'xaxis.range': [0, Math.max(...newCalc1, 1) * 1.15]
+            });
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>

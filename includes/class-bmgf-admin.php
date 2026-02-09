@@ -27,6 +27,8 @@ class BMGF_Admin {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action('wp_ajax_bmgf_save_section', [$this, 'ajax_save_section']);
         add_action('wp_ajax_bmgf_reset_defaults', [$this, 'ajax_reset_defaults']);
+        add_action('wp_ajax_bmgf_upload_file', [$this, 'ajax_upload_file']);
+        add_action('wp_ajax_bmgf_apply_upload', [$this, 'ajax_apply_upload']);
     }
 
     /**
@@ -63,6 +65,14 @@ class BMGF_Admin {
             'bmgf-admin-script',
             BMGF_DASHBOARD_URL . 'admin/js/bmgf-admin.js',
             ['jquery'],
+            BMGF_DASHBOARD_VERSION,
+            true
+        );
+
+        wp_enqueue_script(
+            'bmgf-upload-script',
+            BMGF_DASHBOARD_URL . 'admin/js/bmgf-upload.js',
+            ['jquery', 'bmgf-admin-script'],
             BMGF_DASHBOARD_VERSION,
             true
         );
@@ -130,6 +140,228 @@ class BMGF_Admin {
         wp_send_json_success([
             'message' => 'Reset to defaults successfully',
             'data' => $defaults,
+        ]);
+    }
+
+    /**
+     * Get the temp directory for storing parsed upload data
+     */
+    private function get_upload_temp_dir(): string {
+        $dir = BMGF_DASHBOARD_PATH . 'tmp';
+        if (!is_dir($dir)) {
+            wp_mkdir_p($dir);
+            // Protect directory
+            file_put_contents($dir . '/.htaccess', 'Deny from all');
+            file_put_contents($dir . '/index.php', '<?php // Silence is golden.');
+        }
+        return $dir;
+    }
+
+    /**
+     * Save parsed data to a temp file (avoids wp_options size limits)
+     */
+    private function save_parsed_temp(string $file_type, array $parsed): string {
+        $dir = $this->get_upload_temp_dir();
+        $filename = 'bmgf_' . $file_type . '_' . get_current_user_id() . '_' . time() . '.json';
+        $filepath = $dir . '/' . $filename;
+        file_put_contents($filepath, json_encode($parsed));
+        return $filepath;
+    }
+
+    /**
+     * Load parsed data from a temp file
+     */
+    private function load_parsed_temp(string $filepath): ?array {
+        if (!file_exists($filepath) || !is_readable($filepath)) {
+            return null;
+        }
+        // Check file is within our temp dir
+        $real = realpath($filepath);
+        $dir = realpath($this->get_upload_temp_dir());
+        if ($real === false || $dir === false || strpos($real, $dir) !== 0) {
+            return null;
+        }
+        $data = json_decode(file_get_contents($filepath), true);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * AJAX handler for file upload (institutions or courses)
+     */
+    public function ajax_upload_file(): void {
+        check_ajax_referer('bmgf_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $file_type = sanitize_text_field($_POST['file_type'] ?? '');
+        if (!in_array($file_type, ['institutions', 'courses'], true)) {
+            wp_send_json_error(['message' => 'Invalid file type parameter.']);
+            return;
+        }
+
+        if (empty($_FILES['file'])) {
+            wp_send_json_error(['message' => 'No file uploaded. Check your server upload_max_filesize (' . ini_get('upload_max_filesize') . ') and post_max_size (' . ini_get('post_max_size') . ').']);
+            return;
+        }
+
+        $file = $_FILES['file'];
+
+        // Check for PHP upload errors
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $error_messages = [
+                UPLOAD_ERR_INI_SIZE => 'File exceeds server upload_max_filesize (' . ini_get('upload_max_filesize') . '). Increase this in php.ini.',
+                UPLOAD_ERR_FORM_SIZE => 'File exceeds form MAX_FILE_SIZE.',
+                UPLOAD_ERR_PARTIAL => 'File was only partially uploaded. Please try again.',
+                UPLOAD_ERR_NO_FILE => 'No file was uploaded.',
+                UPLOAD_ERR_NO_TMP_DIR => 'Server missing temporary folder.',
+                UPLOAD_ERR_CANT_WRITE => 'Server failed to write file to disk.',
+                UPLOAD_ERR_EXTENSION => 'A PHP extension stopped the upload.',
+            ];
+            $msg = $error_messages[$file['error']] ?? 'Unknown upload error (code ' . $file['error'] . ').';
+            wp_send_json_error(['message' => $msg]);
+            return;
+        }
+
+        // Validate extension
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'csv'], true)) {
+            wp_send_json_error(['message' => 'Invalid file type. Only .xlsx and .csv files are accepted.']);
+            return;
+        }
+
+        // Validate size (50MB)
+        if ($file['size'] > 50 * 1024 * 1024) {
+            wp_send_json_error(['message' => 'File is too large. Maximum size is 50MB.']);
+            return;
+        }
+
+        // Parse the file
+        try {
+            $parsed = BMGF_XLSX_Parser::parse($file['tmp_name']);
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'Parse error: ' . $e->getMessage()]);
+            return;
+        }
+
+        if (empty($parsed['rows'])) {
+            wp_send_json_error(['message' => 'File was parsed but contains no data rows.']);
+            return;
+        }
+
+        // Validate required columns
+        $required = $file_type === 'institutions'
+            ? BMGF_Data_Mapper::INSTITUTION_REQUIRED
+            : BMGF_Data_Mapper::COURSE_REQUIRED;
+
+        $missing = BMGF_XLSX_Parser::validate_columns($parsed['headers'], $required);
+        if (!empty($missing)) {
+            wp_send_json_error([
+                'message' => 'Missing required columns: ' . implode(', ', $missing) . '. Found columns: ' . implode(', ', $parsed['headers']),
+            ]);
+            return;
+        }
+
+        // Store parsed data to temp file (not transients - too large for wp_options)
+        try {
+            $temp_path = $this->save_parsed_temp($file_type, $parsed);
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'Failed to store parsed data: ' . $e->getMessage()]);
+            return;
+        }
+
+        wp_send_json_success([
+            'message' => ucfirst($file_type) . ' file parsed successfully (' . count($parsed['rows']) . ' rows).',
+            'transient_key' => $temp_path,
+            'row_count' => count($parsed['rows']),
+            'columns' => $parsed['headers'],
+        ]);
+    }
+
+    /**
+     * AJAX handler for applying uploaded data (or preview)
+     */
+    public function ajax_apply_upload(): void {
+        check_ajax_referer('bmgf_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        @ini_set('memory_limit', '256M');
+        @set_time_limit(300);
+
+        $inst_key = sanitize_text_field($_POST['institutions_key'] ?? '');
+        $courses_key = sanitize_text_field($_POST['courses_key'] ?? '');
+        $preview_only = intval($_POST['preview_only'] ?? 0);
+
+        $institutions = null;
+        $courses = null;
+
+        if ($inst_key !== '') {
+            $institutions = $this->load_parsed_temp($inst_key);
+            if ($institutions === null) {
+                wp_send_json_error(['message' => 'Institutions data expired or not found. Please re-upload the file.']);
+                return;
+            }
+        }
+
+        if ($courses_key !== '') {
+            $courses = $this->load_parsed_temp($courses_key);
+            if ($courses === null) {
+                wp_send_json_error(['message' => 'Courses data expired or not found. Please re-upload the file.']);
+                return;
+            }
+        }
+
+        if ($institutions === null && $courses === null) {
+            wp_send_json_error(['message' => 'No uploaded data found. Please upload at least one file.']);
+            return;
+        }
+
+        // Compute all sections
+        try {
+            $computed = BMGF_Data_Mapper::compute_all($institutions, $courses);
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'Data computation error: ' . $e->getMessage()]);
+            return;
+        }
+
+        if ($preview_only) {
+            $preview = BMGF_Data_Mapper::preview($computed);
+            wp_send_json_success(['preview' => $preview]);
+            return;
+        }
+
+        // Save all sections (except state_data which goes to a JS file)
+        $state_data = $computed['state_data'] ?? [];
+        unset($computed['state_data']);
+
+        foreach ($computed as $section => $data) {
+            $this->data_manager->save_section($section, $data);
+        }
+
+        // Regenerate state_data_updated.js
+        if (!empty($state_data)) {
+            $js_content = BMGF_Data_Mapper::generate_state_js($state_data);
+            $js_path = BMGF_DASHBOARD_PATH . 'charts/state_data_updated.js';
+            file_put_contents($js_path, $js_content);
+        }
+
+        // Clean up temp files
+        if ($inst_key !== '' && file_exists($inst_key)) {
+            @unlink($inst_key);
+        }
+        if ($courses_key !== '' && file_exists($courses_key)) {
+            @unlink($courses_key);
+        }
+
+        wp_send_json_success([
+            'message' => 'All dashboard data updated successfully.',
+            'computed' => $computed,
         ]);
     }
 

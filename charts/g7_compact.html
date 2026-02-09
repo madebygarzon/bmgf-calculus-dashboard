@@ -132,6 +132,55 @@
                 });
             }, 150);
         });
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!filteredData || filteredData.length === 0) return;
+
+            const stateToRegion = window.BMGF_STATE_TO_REGION || {};
+            const regionMap = {};
+            const regionOrder = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mountains', 'Plains', 'New England'];
+            const regionLabels = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mtns', 'Plains', 'New England'];
+
+            regionOrder.forEach(r => { regionMap[r] = { calc1: 0, calc2: 0 }; });
+
+            filteredData.forEach(d => {
+                const region = stateToRegion[d.state];
+                if (region && regionMap[region]) {
+                    regionMap[region].calc1 += d.calc_i || 0;
+                    regionMap[region].calc2 += d.calc_ii || 0;
+                }
+            });
+
+            const newRegions = [];
+            const newCalc1 = [];
+            const newCalc2 = [];
+            regionOrder.forEach((r, i) => {
+                const c1 = Math.round(regionMap[r].calc1 / 1000);
+                const c2 = Math.round(regionMap[r].calc2 / 1000);
+                if (c1 > 0 || c2 > 0) {
+                    newRegions.push(regionLabels[i]);
+                    newCalc1.push(c1);
+                    newCalc2.push(c2);
+                }
+            });
+
+            Plotly.animate('chart', {
+                data: [
+                    { x: newRegions, y: newCalc1, text: newCalc1.map(v => v + 'K') },
+                    { x: newRegions, y: newCalc2, text: newCalc2.map(v => v + 'K') }
+                ],
+                traces: [0, 1]
+            }, {
+                transition: { duration: 400, easing: 'cubic-out' },
+                frame: { duration: 400 }
+            });
+
+            Plotly.relayout('chart', {
+                'yaxis.range': [0, Math.max(...newCalc1, 1) * 1.25]
+            });
+        };
     </script>
+    <script src="filter-receiver.js"></script>
 </body>
 </html>
