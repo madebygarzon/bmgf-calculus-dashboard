@@ -3,7 +3,7 @@
  * Plugin Name: BMGF Calculus Market Dashboard
  * Plugin URI: https://partnerinpublishing.com
  * Description: Interactive dashboard for Math Education Market Analysis - Calculus textbook market data visualization.
- * Version: 11.0.0
+ * Version: 13.0.0
  * Author: Team Dev PIP
  * Author URI: https://partnerinpublishing.com
  * License: GPL v2 or later
@@ -264,7 +264,7 @@ class BMGF_Calculus_Dashboard {
 
                 .bmgf-frame {
                     width: 1280px;
-                    min-height: 1880px;
+                    height: 1880px;
                     margin: 0 auto;
                     position: relative;
                     background: var(--background);
@@ -658,10 +658,56 @@ class BMGF_Calculus_Dashboard {
                     'institutions': chartsUrl + 'tab3_institutions_analysis.html',
                     'textbooks': chartsUrl + 'tab4_textbook_analysis.html'
                 };
+                var tabIframe = document.getElementById('bmgf-tab-iframe');
+                var frame = document.querySelector('.bmgf-frame');
+                var iframeTopOffset = 125;
+                var frameBottomPadding = 30;
+                var coverFrameHeight = 1880;
+
+                function bmgfResizeTabIframe() {
+                    if (!tabIframe || tabIframe.style.display === 'none') {
+                        return;
+                    }
+                    try {
+                        var iframeDoc = tabIframe.contentDocument || (tabIframe.contentWindow && tabIframe.contentWindow.document);
+                        if (!iframeDoc) {
+                            return;
+                        }
+                        var body = iframeDoc.body;
+                        var html = iframeDoc.documentElement;
+                        if (!body || !html) {
+                            return;
+                        }
+                        var contentHeight = Math.max(
+                            body.scrollHeight,
+                            body.offsetHeight,
+                            html.clientHeight,
+                            html.scrollHeight,
+                            html.offsetHeight
+                        );
+                        if (contentHeight > 0) {
+                            tabIframe.style.height = contentHeight + 'px';
+                            if (frame) {
+                                frame.style.height = (iframeTopOffset + contentHeight + frameBottomPadding) + 'px';
+                            }
+                        }
+                    } catch (e) {
+                        // Ignore cross-document access errors.
+                    }
+                }
+
+                if (tabIframe) {
+                    tabIframe.addEventListener('load', function() {
+                        bmgfResizeTabIframe();
+                        setTimeout(bmgfResizeTabIframe, 150);
+                        setTimeout(bmgfResizeTabIframe, 500);
+                        setTimeout(bmgfResizeTabIframe, 1200);
+                    });
+                }
+                window.addEventListener('resize', bmgfResizeTabIframe);
 
                 window.bmgfSwitchTab = function(tab) {
                     var coverContent = document.getElementById('bmgf-cover-content');
-                    var tabIframe = document.getElementById('bmgf-tab-iframe');
                     var allTabs = document.querySelectorAll('.bmgf-nav-tab');
 
                     // Update active tab
@@ -677,11 +723,15 @@ class BMGF_Calculus_Dashboard {
                         coverContent.style.display = 'block';
                         tabIframe.style.display = 'none';
                         tabIframe.src = '';
+                        if (frame) {
+                            frame.style.height = coverFrameHeight + 'px';
+                        }
                     } else {
                         // Hide cover content, show iframe with new content
                         coverContent.style.display = 'none';
                         tabIframe.src = tabUrls[tab];
                         tabIframe.style.display = 'block';
+                        tabIframe.style.height = '0';
                     }
                 };
             })();
@@ -696,11 +746,12 @@ class BMGF_Calculus_Dashboard {
                     left: 0;
                     top: 125px;
                     width: 100%;
-                    min-height: 1755px;
+                    height: 0;
                     border: none;
                     display: block;
                     margin: 0 auto;
                     background: var(--background);
+                    overflow: hidden;
                 }
             </style>
         </div>
