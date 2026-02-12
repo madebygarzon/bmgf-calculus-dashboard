@@ -45,6 +45,17 @@
     // Current filter state
     let currentFilters = loadFilters();
 
+    function hasActiveFilters() {
+        return Object.values(currentFilters).some(value => value !== 'All');
+    }
+
+    function getBaseDashboardKpis() {
+        if (!window.BMGF_DATA || !window.BMGF_DATA.kpis) {
+            return null;
+        }
+        return window.BMGF_DATA.kpis;
+    }
+
     // Region mapping for states
     const stateToRegion = {
         'Florida': 'Southeast', 'Georgia': 'Southeast', 'Alabama': 'Southeast',
@@ -73,7 +84,7 @@
             return [];
         }
 
-        return stateData.filter(item => {
+        const filtered = stateData.filter(item => {
             // Filter by state
             if (currentFilters.state !== 'All' && item.state !== currentFilters.state) {
                 return false;
@@ -100,10 +111,46 @@
 
             return true;
         });
+
+        // Course filter projection over aggregated state data.
+        // We cannot split institution count by course here, but we can align enrollment metrics.
+        if (currentFilters.course === 'Calc I') {
+            return filtered.map(item => ({
+                ...item,
+                total: item.calc_i || 0,
+                calc_ii: 0
+            }));
+        }
+
+        if (currentFilters.course === 'Calc II') {
+            return filtered.map(item => ({
+                ...item,
+                total: item.calc_ii || 0,
+                calc_i: 0
+            }));
+        }
+
+        return filtered;
     }
 
     // Calculate KPIs from filtered data
     function calculateKPIs(filteredData) {
+        const usingDashboardBaseKpis = !hasActiveFilters() &&
+            window.BMGF_DATA &&
+            window.BMGF_DATA.kpis;
+
+        if (usingDashboardBaseKpis) {
+            const k = window.BMGF_DATA.kpis;
+            const totalEnrollment = Number(k.total_enrollment) || 0;
+            return {
+                totalInstitutions: Number(k.total_institutions) || 0,
+                totalEnrollment: totalEnrollment,
+                totalCalcI: Number(k.calc1_enrollment) || 0,
+                totalCalcII: Number(k.calc2_enrollment) || 0,
+                totalFTE: Math.round(totalEnrollment * 5.9)
+            };
+        }
+
         if (!filteredData || filteredData.length === 0) {
             return {
                 totalInstitutions: 0,
@@ -133,27 +180,25 @@
 
     // Format number for display
     function formatNumber(num) {
-        if (num >= 1000000) {
-            return (num / 1000000).toFixed(1) + 'M';
-        }
-        if (num >= 1000) {
-            return num.toLocaleString();
-        }
-        return num.toString();
+        return Number(num || 0).toLocaleString();
     }
 
     // Update KPI display elements
     function updateKPIDisplay(kpis) {
+        const baseKpis = getBaseDashboardKpis();
+
         // Update institutions
         const instEl = document.getElementById('kpi-institutions');
         if (instEl) {
-            instEl.textContent = formatNumber(kpis.totalInstitutions);
+            const value = baseKpis ? baseKpis.total_institutions : kpis.totalInstitutions;
+            instEl.textContent = formatNumber(value);
         }
 
         // Update total enrollment / calculus enrollment
         const calcEl = document.getElementById('kpi-calculus');
         if (calcEl) {
-            calcEl.textContent = formatNumber(kpis.totalEnrollment);
+            const value = baseKpis ? baseKpis.total_enrollment : kpis.totalEnrollment;
+            calcEl.textContent = formatNumber(value);
         }
 
         // Update FTE

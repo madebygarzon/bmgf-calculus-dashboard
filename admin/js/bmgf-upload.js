@@ -274,7 +274,13 @@
         handleApply: function(e) {
             e.preventDefault();
 
-            if (!confirm('This will overwrite all current dashboard data with the uploaded data. Continue?')) {
+            var hasInstitutions = !!this.uploadedKeys.institutions;
+            var hasCourses = !!this.uploadedKeys.courses;
+            var confirmMessage = (hasInstitutions && hasCourses)
+                ? 'This will overwrite all current dashboard data with the uploaded files. Continue?'
+                : 'This will partially update the dashboard using only the uploaded file(s). Other sections will remain unchanged. Continue?';
+
+            if (!confirm(confirmMessage)) {
                 return;
             }
 

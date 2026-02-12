@@ -356,27 +356,27 @@
         <!-- KPI Cards Row -->
         <div class="kpi-row">
             <div class="kpi-card white">
-                <div class="kpi-number">933</div>
+                <div class="kpi-number" id="kpi-cover-institutions">933</div>
                 <div class="kpi-label">Total Institutions</div>
             </div>
             <div class="kpi-card dark">
-                <div class="kpi-number">1,817,722</div>
-                <div class="kpi-label">Total Enrollment</div>
+                <div class="kpi-number" id="kpi-cover-total-enrollment">1,817,722</div>
+                <div class="kpi-label">Total Calculus Enrollment</div>
             </div>
             <div class="kpi-card lavender">
-                <div class="kpi-number">1,202,783</div>
+                <div class="kpi-number" id="kpi-cover-calc1-enrollment">1,202,783</div>
                 <div class="kpi-label">Calculus I Enrollment</div>
             </div>
             <div class="kpi-card white">
-                <div class="kpi-number">66.2%</div>
+                <div class="kpi-number" id="kpi-cover-calc1-share">66.2%</div>
                 <div class="kpi-label">Calc I Share</div>
             </div>
             <div class="kpi-card teal">
-                <div class="kpi-number">614,939</div>
+                <div class="kpi-number" id="kpi-cover-calc2-enrollment">614,939</div>
                 <div class="kpi-label">Calculus II Enrollment</div>
             </div>
             <div class="kpi-card white">
-                <div class="kpi-number">33.8%</div>
+                <div class="kpi-number" id="kpi-cover-calc2-share">33.8%</div>
                 <div class="kpi-label">Calc II Share</div>
             </div>
         </div>
@@ -407,5 +407,33 @@
             <img class="footer-logo" src="../assets/logo_pip.png" alt="Partner In Publishing">
         </footer>
     </div>
+    <script>
+        (function() {
+            if (!window.BMGF_DATA || !window.BMGF_DATA.kpis) {
+                return;
+            }
+
+            const k = window.BMGF_DATA.kpis;
+
+            function setNumber(id, value) {
+                const el = document.getElementById(id);
+                if (!el || value === undefined || value === null) return;
+                el.textContent = Number(value).toLocaleString();
+            }
+
+            function setPercent(id, value) {
+                const el = document.getElementById(id);
+                if (!el || value === undefined || value === null) return;
+                el.textContent = value + '%';
+            }
+
+            setNumber('kpi-cover-institutions', k.total_institutions);
+            setNumber('kpi-cover-total-enrollment', k.total_enrollment);
+            setNumber('kpi-cover-calc1-enrollment', k.calc1_enrollment);
+            setPercent('kpi-cover-calc1-share', k.calc1_share);
+            setNumber('kpi-cover-calc2-enrollment', k.calc2_enrollment);
+            setPercent('kpi-cover-calc2-share', k.calc2_share);
+        })();
+    </script>
 </body>
 </html>

@@ -598,13 +598,13 @@
 
                 // Total Institutions
                 const instEl = document.getElementById('kpi-institutions');
-                if (instEl && kpis.total_institutions) {
+                if (instEl && kpis.total_institutions !== undefined && kpis.total_institutions !== null) {
                     instEl.textContent = Number(kpis.total_institutions).toLocaleString();
                 }
 
                 // Total Calculus Enrollment
                 const calcEl = document.getElementById('kpi-calculus');
-                if (calcEl && kpis.total_enrollment) {
+                if (calcEl && kpis.total_enrollment !== undefined && kpis.total_enrollment !== null) {
                     calcEl.textContent = Number(kpis.total_enrollment).toLocaleString();
                 }
             }

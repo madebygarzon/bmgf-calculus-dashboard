@@ -3,7 +3,7 @@
  * Plugin Name: BMGF Calculus Market Dashboard
  * Plugin URI: https://partnerinpublishing.com
  * Description: Interactive dashboard for Math Education Market Analysis - Calculus textbook market data visualization.
- * Version: 13.0.0
+ * Version: 16.0.0
  * Author: Team Dev PIP
  * Author URI: https://partnerinpublishing.com
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BMGF_DASHBOARD_VERSION', '2.1.0');
+define('BMGF_DASHBOARD_VERSION', '2.1.1');
 define('BMGF_DASHBOARD_PATH', plugin_dir_path(__FILE__));
 define('BMGF_DASHBOARD_URL', plugin_dir_url(__FILE__));
 
@@ -155,6 +155,7 @@ class BMGF_Calculus_Dashboard {
     private function update_asset_paths(string $content): string {
         $plugin_url = BMGF_DASHBOARD_URL;
         $charts_url = home_url('/bmgf-charts/');
+        $asset_version = rawurlencode(BMGF_DASHBOARD_VERSION);
 
         // Update relative paths to assets
         $content = str_replace('../assets/', $plugin_url . 'assets/', $content);
@@ -164,21 +165,21 @@ class BMGF_Calculus_Dashboard {
         // Only match simple filenames (no paths, no URLs) - e.g., "script.js" but not "https://..." or "path/script.js"
         $content = preg_replace(
             '/src="([a-zA-Z0-9_-]+\.js)"/',
-            'src="' . $plugin_url . 'charts/$1"',
+            'src="' . $plugin_url . 'charts/$1?v=' . $asset_version . '"',
             $content
         );
 
         // Update chart iframe sources
         $content = preg_replace(
             '/src="([^"]+\.html)"/',
-            'src="' . $charts_url . '$1"',
+            'src="' . $charts_url . '$1?v=' . $asset_version . '"',
             $content
         );
 
         // Update navigation hrefs
         $content = preg_replace(
             "/window\.location\.href='([^']+\.html)'/",
-            "window.location.href='" . $charts_url . "$1'",
+            "window.location.href='" . $charts_url . "$1?v=" . $asset_version . "'",
             $content
         );
 
@@ -208,7 +209,7 @@ class BMGF_Calculus_Dashboard {
             return $this->render_cover_page($atts['height']);
         }
 
-        $chart_url = home_url('/bmgf-charts/' . $chart_file);
+        $chart_url = home_url('/bmgf-charts/' . $chart_file . '?v=' . rawurlencode(BMGF_DASHBOARD_VERSION));
 
         return sprintf(
             '<div class="bmgf-dashboard-wrapper" style="width:100%%;max-width:1280px;margin:0 auto;">
@@ -232,6 +233,7 @@ class BMGF_Calculus_Dashboard {
     private function render_cover_page(string $height): string {
         $plugin_url = BMGF_DASHBOARD_URL;
         $charts_url = home_url('/bmgf-charts/');
+        $charts_version_query = '?v=' . rawurlencode(BMGF_DASHBOARD_VERSION);
 
         // Get dynamic KPI data
         $data_manager = BMGF_Data_Manager::get_instance();
@@ -601,7 +603,7 @@ class BMGF_Calculus_Dashboard {
                     </div>
                     <div class="bmgf-kpi-card dark">
                         <div class="bmgf-kpi-number"><?php echo esc_html(number_format($kpis['total_enrollment'])); ?></div>
-                        <div class="bmgf-kpi-label">Total Enrollment</div>
+                        <div class="bmgf-kpi-label">Total Calculus Enrollment</div>
                     </div>
                     <div class="bmgf-kpi-card lavender">
                         <div class="bmgf-kpi-number"><?php echo esc_html(number_format($kpis['calc1_enrollment'])); ?></div>
@@ -626,7 +628,7 @@ class BMGF_Calculus_Dashboard {
                         <div class="bmgf-chart-card-icon calc1">I</div>
                         <div class="bmgf-chart-card-title">Calculus I Distribution</div>
                     </div>
-                    <iframe class="bmgf-chart-iframe" src="<?php echo esc_url($charts_url . 'cover_calc1_enrollment.html'); ?>" title="Calculus I Distribution"></iframe>
+                    <iframe class="bmgf-chart-iframe" src="<?php echo esc_url($charts_url . 'cover_calc1_enrollment.html' . $charts_version_query); ?>" title="Calculus I Distribution"></iframe>
                 </div>
 
                 <div class="bmgf-chart-card right">
@@ -634,11 +636,11 @@ class BMGF_Calculus_Dashboard {
                         <div class="bmgf-chart-card-icon calc2">II</div>
                         <div class="bmgf-chart-card-title">Calculus II Distribution</div>
                     </div>
-                    <iframe class="bmgf-chart-iframe" src="<?php echo esc_url($charts_url . 'cover_calc2_enrollment.html'); ?>" title="Calculus II Distribution"></iframe>
+                    <iframe class="bmgf-chart-iframe" src="<?php echo esc_url($charts_url . 'cover_calc2_enrollment.html' . $charts_version_query); ?>" title="Calculus II Distribution"></iframe>
                 </div>
 
                 <section class="bmgf-map-section">
-                    <iframe class="bmgf-map-iframe" src="<?php echo esc_url($charts_url . 'g1_premium_map_v3.html'); ?>" title="Interactive Map"></iframe>
+                    <iframe class="bmgf-map-iframe" src="<?php echo esc_url($charts_url . 'g1_premium_map_v3.html' . $charts_version_query); ?>" title="Interactive Map"></iframe>
                 </section>
 
                 <footer class="bmgf-footer">
@@ -652,11 +654,12 @@ class BMGF_Calculus_Dashboard {
             <script>
             (function() {
                 var chartsUrl = <?php echo json_encode($charts_url); ?>;
+                var chartsVersionQuery = <?php echo json_encode($charts_version_query); ?>;
                 var tabUrls = {
                     'cover': null,
-                    'enrollment': chartsUrl + 'tab2_enrollment_analysis.html',
-                    'institutions': chartsUrl + 'tab3_institutions_analysis.html',
-                    'textbooks': chartsUrl + 'tab4_textbook_analysis.html'
+                    'enrollment': chartsUrl + 'tab2_enrollment_analysis.html' + chartsVersionQuery,
+                    'institutions': chartsUrl + 'tab3_institutions_analysis.html' + chartsVersionQuery,
+                    'textbooks': chartsUrl + 'tab4_textbook_analysis.html' + chartsVersionQuery
                 };
                 var tabIframe = document.getElementById('bmgf-tab-iframe');
                 var frame = document.querySelector('.bmgf-frame');

@@ -132,32 +132,38 @@
             totalLabel: 'Enrollment'
         };
 
+        function formatVal(v) {
+            if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+            if (v >= 1000) return Math.round(v / 1000) + 'K';
+            return v.toString();
+        }
+
+        function hasActiveFilters(filters) {
+            if (!filters) return false;
+            // This chart can only be reliably filtered by state/region/publisher
+            // using the aggregated stateData payload.
+            const effectiveKeys = ['state', 'region', 'publisher'];
+            return effectiveKeys.some((key) => filters[key] && filters[key] !== 'All');
+        }
+
         // Build config from dynamic data if available
-        function buildConfig() {
+        function buildConfigFromPublishers() {
             if (window.BMGF_DATA && window.BMGF_DATA.publishers && window.BMGF_DATA.publishers.length > 0) {
                 const publishers = window.BMGF_DATA.publishers;
                 const totalEnrollment = publishers.reduce((sum, p) => sum + (p.enrollment || 0), 0);
+                const calcPct = (enr) => totalEnrollment > 0 ? Math.round((enr / totalEnrollment) * 100) : 0;
 
                 return {
                     labels: publishers.map(p => p.name),
-                    values: publishers.map(p => p.market_share),
-                    realValues: publishers.map(p => {
-                        const val = p.enrollment || 0;
-                        if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
-                        if (val >= 1000) return Math.round(val / 1000) + 'K';
-                        return val.toString();
-                    }),
+                    values: publishers.map(p => calcPct(p.enrollment || 0)),
+                    realValues: publishers.map(p => formatVal(p.enrollment || 0)),
                     colors: publishers.map(p => p.color || '#92A4CF'),
-                    total: totalEnrollment >= 1000000
-                        ? (totalEnrollment / 1000000).toFixed(1) + 'M'
-                        : Math.round(totalEnrollment / 1000) + 'K',
+                    total: formatVal(totalEnrollment),
                     totalLabel: 'Enrollment'
                 };
             }
             return defaultConfig;
         }
-
-        const config = buildConfig();
 
         const svg = document.getElementById('radial-chart');
         const legend = document.getElementById('legend');
@@ -167,75 +173,78 @@
         const barWidth = 11;
         const gap = 4;
 
-        const sortedData = config.values
-            .map((v, i) => ({ value: v, index: i }))
-            .sort((a, b) => b.value - a.value);
+        function renderChart(config) {
+            const sortedData = config.values
+                .map((v, i) => ({ value: v, index: i }))
+                .sort((a, b) => b.value - a.value);
 
-        svg.innerHTML = `
-            <text x="${cx}" y="${cy}" text-anchor="middle" class="center-text center-number">${config.total}</text>
-            <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="center-label">${config.totalLabel}</text>
-        `;
-
-        const bars = [];
-
-        sortedData.forEach((item, sortIndex) => {
-            const radius = startRadius + sortIndex * (barWidth + gap);
-            const percent = item.value / 100;
-            const startAngle = 135;
-            const maxSweep = 270;
-            const endAngle = startAngle + (maxSweep * percent);
-
-            const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            track.setAttribute('d', describeArc(cx, cy, radius, startAngle, startAngle + maxSweep));
-            track.setAttribute('class', 'radial-track');
-            track.setAttribute('stroke-width', barWidth);
-            svg.appendChild(track);
-
-            const bar = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            bar.setAttribute('d', describeArc(cx, cy, radius, startAngle, startAngle));
-            bar.setAttribute('class', 'radial-bar');
-            bar.setAttribute('stroke', config.colors[item.index]);
-            bar.setAttribute('stroke-width', barWidth);
-            svg.appendChild(bar);
-
-            bars.push({ bar, item, radius, startAngle, endAngle });
-
-            setTimeout(() => {
-                animateArc(bar, cx, cy, radius, startAngle, endAngle, 600);
-            }, sortIndex * 100);
-        });
-
-        setTimeout(() => {
-            bars.forEach(({ bar, item }) => {
-                bar.addEventListener('mouseenter', () => {
-                    tooltip.textContent = `${config.labels[item.index]}: ${config.realValues[item.index]} (${config.values[item.index]}%)`;
-                    tooltip.classList.add('visible');
-                });
-                bar.addEventListener('mousemove', (e) => {
-                    tooltip.style.left = (e.clientX + 10) + 'px';
-                    tooltip.style.top = (e.clientY - 30) + 'px';
-                });
-                bar.addEventListener('mouseleave', () => {
-                    tooltip.classList.remove('visible');
-                });
-            });
-        }, 700);
-
-        sortedData.forEach((item, i) => {
-            const li = document.createElement('div');
-            li.className = 'legend-item';
-            li.innerHTML = `
-                <span class="legend-dot" style="background: ${config.colors[item.index]}"></span>
-                <span>${config.labels[item.index]}</span>
-                <span class="legend-value">${config.values[item.index]}%</span>
+            svg.innerHTML = `
+                <text x="${cx}" y="${cy}" text-anchor="middle" class="center-text center-number">${config.total}</text>
+                <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="center-label">${config.totalLabel}</text>
             `;
-            li.style.opacity = '0';
-            legend.appendChild(li);
+            legend.innerHTML = '';
+
+            const bars = [];
+
+            sortedData.forEach((item, sortIndex) => {
+                const radius = startRadius + sortIndex * (barWidth + gap);
+                const percent = item.value / 100;
+                const startAngle = 135;
+                const maxSweep = 270;
+                const endAngle = startAngle + (maxSweep * percent);
+
+                const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                track.setAttribute('d', describeArc(cx, cy, radius, startAngle, startAngle + maxSweep));
+                track.setAttribute('class', 'radial-track');
+                track.setAttribute('stroke-width', barWidth);
+                svg.appendChild(track);
+
+                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                bar.setAttribute('d', describeArc(cx, cy, radius, startAngle, startAngle));
+                bar.setAttribute('class', 'radial-bar');
+                bar.setAttribute('stroke', config.colors[item.index]);
+                bar.setAttribute('stroke-width', barWidth);
+                svg.appendChild(bar);
+
+                bars.push({ bar, item, radius, startAngle, endAngle });
+
+                setTimeout(() => {
+                    animateArc(bar, cx, cy, radius, startAngle, endAngle, 600);
+                }, sortIndex * 100);
+            });
+
             setTimeout(() => {
-                li.style.transition = 'opacity 0.3s ease';
-                li.style.opacity = '1';
-            }, 400 + i * 60);
-        });
+                bars.forEach(({ bar, item }) => {
+                    bar.addEventListener('mouseenter', () => {
+                        tooltip.textContent = `${config.labels[item.index]}: ${config.realValues[item.index]} (${config.values[item.index]}%)`;
+                        tooltip.classList.add('visible');
+                    });
+                    bar.addEventListener('mousemove', (e) => {
+                        tooltip.style.left = (e.clientX + 10) + 'px';
+                        tooltip.style.top = (e.clientY - 30) + 'px';
+                    });
+                    bar.addEventListener('mouseleave', () => {
+                        tooltip.classList.remove('visible');
+                    });
+                });
+            }, 700);
+
+            sortedData.forEach((item, i) => {
+                const li = document.createElement('div');
+                li.className = 'legend-item';
+                li.innerHTML = `
+                    <span class="legend-dot" style="background: ${config.colors[item.index]}"></span>
+                    <span>${config.labels[item.index]}</span>
+                    <span class="legend-value">${config.values[item.index]}%</span>
+                `;
+                li.style.opacity = '0';
+                legend.appendChild(li);
+                setTimeout(() => {
+                    li.style.transition = 'opacity 0.3s ease';
+                    li.style.opacity = '1';
+                }, 400 + i * 60);
+            });
+        }
 
         function describeArc(cx, cy, r, start, end) {
             const s = polarToCartesian(cx, cy, r, start);
@@ -260,9 +269,10 @@
             requestAnimationFrame(update);
         }
 
-        // Filter update handler
-        window.handleFilterUpdate = function(filters, filteredData) {
-            if (!filteredData || filteredData.length === 0) return;
+        function buildConfigFromFilteredData(filteredData) {
+            if (!filteredData || filteredData.length === 0) {
+                return null;
+            }
 
             const pubTotals = {};
             filteredData.forEach(d => {
@@ -276,16 +286,24 @@
             });
 
             const totalEnr = Object.values(pubTotals).reduce((s, v) => s + v, 0);
-            if (totalEnr === 0) return;
+            if (totalEnr === 0) {
+                return {
+                    labels: [],
+                    values: [],
+                    realValues: [],
+                    colors: [],
+                    total: '0',
+                    totalLabel: 'Enrollment'
+                };
+            }
 
             const pubColors = { 'Cengage': '#008384', 'Pearson': '#234A5D', 'Wiley': '#4A81A8', 'OpenStax': '#7FBFC0', 'Macmillan': '#D3DEF6' };
-            const formatVal = (v) => v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : Math.round(v / 1000) + 'K';
 
             const sortedPubs = Object.entries(pubTotals)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 6);
 
-            const newConfig = {
+            return {
                 labels: sortedPubs.map(([n]) => n),
                 values: sortedPubs.map(([, e]) => Math.round(e / totalEnr * 100)),
                 realValues: sortedPubs.map(([, e]) => formatVal(e)),
@@ -293,58 +311,22 @@
                 total: formatVal(totalEnr),
                 totalLabel: 'Enrollment'
             };
+        }
 
-            svg.innerHTML = '';
-            legend.innerHTML = '';
+        renderChart(buildConfigFromPublishers());
 
-            svg.innerHTML = `
-                <text x="${cx}" y="${cy}" text-anchor="middle" class="center-text center-number">${newConfig.total}</text>
-                <text x="${cx}" y="${cy + 14}" text-anchor="middle" class="center-label">${newConfig.totalLabel}</text>
-            `;
-
-            const newSorted = newConfig.values.map((v, i) => ({ value: v, index: i })).sort((a, b) => b.value - a.value);
-
-            newSorted.forEach((item, sortIndex) => {
-                const radius = startRadius + sortIndex * (barWidth + gap);
-                const percent = item.value / 100;
-                const sAngle = 135;
-                const maxSweep = 270;
-                const eAngle = sAngle + (maxSweep * percent);
-
-                const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                track.setAttribute('d', describeArc(cx, cy, radius, sAngle, sAngle + maxSweep));
-                track.setAttribute('class', 'radial-track');
-                track.setAttribute('stroke-width', barWidth);
-                svg.appendChild(track);
-
-                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                bar.setAttribute('class', 'radial-bar');
-                bar.setAttribute('stroke', newConfig.colors[item.index]);
-                bar.setAttribute('stroke-width', barWidth);
-                svg.appendChild(bar);
-                animateArc(bar, cx, cy, radius, sAngle, eAngle, 400);
-
-                bar.addEventListener('mouseenter', () => {
-                    tooltip.textContent = `${newConfig.labels[item.index]}: ${newConfig.realValues[item.index]} (${newConfig.values[item.index]}%)`;
-                    tooltip.classList.add('visible');
-                });
-                bar.addEventListener('mousemove', (e) => {
-                    tooltip.style.left = (e.clientX + 10) + 'px';
-                    tooltip.style.top = (e.clientY - 30) + 'px';
-                });
-                bar.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
-            });
-
-            newSorted.forEach((item) => {
-                const li = document.createElement('div');
-                li.className = 'legend-item';
-                li.innerHTML = `
-                    <span class="legend-dot" style="background: ${newConfig.colors[item.index]}"></span>
-                    <span>${newConfig.labels[item.index]}</span>
-                    <span class="legend-value">${newConfig.values[item.index]}%</span>
-                `;
-                legend.appendChild(li);
-            });
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            if (!hasActiveFilters(filters)) {
+                renderChart(buildConfigFromPublishers());
+                return;
+            }
+            const filteredConfig = buildConfigFromFilteredData(filteredData);
+            if (filteredConfig) {
+                renderChart(filteredConfig);
+            } else {
+                renderChart(buildConfigFromPublishers());
+            }
         };
     </script>
     <script src="filter-receiver.js"></script>

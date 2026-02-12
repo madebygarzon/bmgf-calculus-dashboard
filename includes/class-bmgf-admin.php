@@ -322,7 +322,7 @@ class BMGF_Admin {
             return;
         }
 
-        // Compute all sections
+        // Compute all sections from uploaded files
         try {
             $computed = BMGF_Data_Mapper::compute_all($institutions, $courses);
         } catch (Exception $e) {
@@ -330,22 +330,95 @@ class BMGF_Admin {
             return;
         }
 
+        $has_institutions_upload = ($institutions !== null);
+        $has_courses_upload = ($courses !== null);
+        $has_full_upload = ($has_institutions_upload && $has_courses_upload);
+
+        $current_data = $this->data_manager->get_all_data();
+        $sections_to_save = [];
+        $state_data = [];
+
+        if ($has_full_upload) {
+            // Full refresh: keep existing behavior
+            $sections_to_save = $computed;
+            $state_data = $sections_to_save['state_data'] ?? [];
+            unset($sections_to_save['state_data']);
+        } else {
+            // Partial refresh: update only sections that can be safely computed
+            if ($has_institutions_upload) {
+                foreach (['sector_data', 'top_institutions', 'institution_size_data'] as $section) {
+                    $sections_to_save[$section] = $computed[$section] ?? [];
+                }
+            }
+
+            if ($has_courses_upload) {
+                foreach (['regional_data', 'publishers', 'top_textbooks', 'period_data'] as $section) {
+                    $sections_to_save[$section] = $computed[$section] ?? [];
+                }
+            }
+
+            // Merge KPI fields so non-uploaded dimensions remain intact.
+            $kpis = $current_data['kpis'] ?? [];
+            if ($has_institutions_upload) {
+                foreach ([
+                    'total_institutions',
+                    'total_enrollment',
+                    'calc1_enrollment',
+                    'calc1_share',
+                    'calc2_enrollment',
+                    'calc2_share',
+                ] as $field) {
+                    if (isset($computed['kpis'][$field])) {
+                        $kpis[$field] = $computed['kpis'][$field];
+                    }
+                }
+            }
+            if ($has_courses_upload) {
+                foreach ([
+                    'avg_price_calc1',
+                    'avg_price_calc2',
+                    'commercial_share',
+                    'oer_share',
+                ] as $field) {
+                    if (isset($computed['kpis'][$field])) {
+                        $kpis[$field] = $computed['kpis'][$field];
+                    }
+                }
+            }
+            $sections_to_save['kpis'] = $kpis;
+
+            // Merge filter subsets based on uploaded source(s).
+            $filters = $current_data['filters'] ?? [];
+            $filter_keys = ['states', 'regions', 'sectors'];
+            if ($has_courses_upload) {
+                $filter_keys = array_merge($filter_keys, ['publishers', 'courses', 'price_ranges']);
+            }
+            foreach (array_unique($filter_keys) as $key) {
+                if (!empty($computed['filters'][$key]) && is_array($computed['filters'][$key])) {
+                    $filters[$key] = $computed['filters'][$key];
+                }
+            }
+            $sections_to_save['filters'] = $filters;
+        }
+
         if ($preview_only) {
-            $preview = BMGF_Data_Mapper::preview($computed);
-            wp_send_json_success(['preview' => $preview]);
+            $preview_source = $has_full_upload
+                ? $computed
+                : array_merge($current_data, $sections_to_save);
+            $preview = BMGF_Data_Mapper::preview($preview_source);
+            wp_send_json_success([
+                'preview' => $preview,
+                'mode' => $has_full_upload ? 'full' : 'partial',
+            ]);
             return;
         }
 
-        // Save all sections (except state_data which goes to a JS file)
-        $state_data = $computed['state_data'] ?? [];
-        unset($computed['state_data']);
-
-        foreach ($computed as $section => $data) {
+        foreach ($sections_to_save as $section => $data) {
             $this->data_manager->save_section($section, $data);
         }
 
-        // Regenerate state_data_updated.js
-        if (!empty($state_data)) {
+        // Regenerate state_data_updated.js only on full upload (institutions + courses).
+        if ($has_full_upload && !empty($state_data)) {
             $js_content = BMGF_Data_Mapper::generate_state_js($state_data);
             $js_path = BMGF_DASHBOARD_PATH . 'charts/state_data_updated.js';
             file_put_contents($js_path, $js_content);
@@ -360,8 +433,12 @@ class BMGF_Admin {
         }
 
         wp_send_json_success([
-            'message' => 'All dashboard data updated successfully.',
-            'computed' => $computed,
+            'message' => $has_full_upload
+                ? 'All dashboard data updated successfully.'
+                : 'Uploaded data applied successfully. Non-uploaded sections were kept unchanged.',
+            'computed' => $sections_to_save,
+            'updated_sections' => array_keys($sections_to_save),
+            'mode' => $has_full_upload ? 'full' : 'partial',
         ]);
     }
 
