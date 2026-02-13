@@ -79,12 +79,16 @@
 
     // Get filtered data from stateData
     function getFilteredData() {
-        if (typeof stateData === 'undefined') {
+        const sourceData = (typeof stateData !== 'undefined' && Array.isArray(stateData))
+            ? stateData
+            : (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.state_data) ? window.BMGF_DATA.state_data : []);
+
+        if (!sourceData || sourceData.length === 0) {
             console.warn('stateData not available');
             return [];
         }
 
-        const filtered = stateData.filter(item => {
+        const filtered = sourceData.filter(item => {
             // Filter by state
             if (currentFilters.state !== 'All' && item.state !== currentFilters.state) {
                 return false;
@@ -147,7 +151,7 @@
                 totalEnrollment: totalEnrollment,
                 totalCalcI: Number(k.calc1_enrollment) || 0,
                 totalCalcII: Number(k.calc2_enrollment) || 0,
-                totalFTE: Math.round(totalEnrollment * 5.9)
+                totalFTE: Number(k.total_fte_enrollment) || 0
             };
         }
 
@@ -166,15 +170,16 @@
             acc.calcI += item.calc_i || 0;
             acc.calcII += item.calc_ii || 0;
             acc.total += item.total || 0;
+            acc.fte += item.fte || 0;
             return acc;
-        }, { institutions: 0, calcI: 0, calcII: 0, total: 0 });
+        }, { institutions: 0, calcI: 0, calcII: 0, total: 0, fte: 0 });
 
         return {
             totalInstitutions: totals.institutions,
             totalEnrollment: totals.total,
             totalCalcI: totals.calcI,
             totalCalcII: totals.calcII,
-            totalFTE: Math.round(totals.total * 5.9) // Approximate FTE multiplier
+            totalFTE: totals.fte
         };
     }
 
@@ -186,25 +191,27 @@
     // Update KPI display elements
     function updateKPIDisplay(kpis) {
         const baseKpis = getBaseDashboardKpis();
+        const useBase = !hasActiveFilters() && baseKpis;
 
         // Update institutions
         const instEl = document.getElementById('kpi-institutions');
         if (instEl) {
-            const value = baseKpis ? baseKpis.total_institutions : kpis.totalInstitutions;
+            const value = useBase ? baseKpis.total_institutions : kpis.totalInstitutions;
             instEl.textContent = formatNumber(value);
         }
 
         // Update total enrollment / calculus enrollment
         const calcEl = document.getElementById('kpi-calculus');
         if (calcEl) {
-            const value = baseKpis ? baseKpis.total_enrollment : kpis.totalEnrollment;
+            const value = useBase ? baseKpis.total_enrollment : kpis.totalEnrollment;
             calcEl.textContent = formatNumber(value);
         }
 
         // Update FTE
         const fteEl = document.getElementById('kpi-fte');
         if (fteEl) {
-            fteEl.textContent = formatNumber(kpis.totalFTE);
+            const value = useBase ? baseKpis.total_fte_enrollment : kpis.totalFTE;
+            fteEl.textContent = formatNumber(value);
         }
 
         // Update regions (count unique regions in filtered data)

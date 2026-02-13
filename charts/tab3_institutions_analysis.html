@@ -582,6 +582,12 @@
                 if (instEl && kpis.total_institutions !== undefined && kpis.total_institutions !== null) {
                     instEl.textContent = Number(kpis.total_institutions).toLocaleString();
                 }
+
+                // Total FTE Enrollment
+                const fteEl = document.getElementById('kpi-fte');
+                if (fteEl && kpis.total_fte_enrollment !== undefined && kpis.total_fte_enrollment !== null) {
+                    fteEl.textContent = Number(kpis.total_fte_enrollment).toLocaleString();
+                }
             }
         })();
     </script>

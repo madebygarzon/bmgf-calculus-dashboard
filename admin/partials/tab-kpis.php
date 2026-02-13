@@ -19,10 +19,13 @@ if (!defined('ABSPATH')) {
                 <input type="number" id="kpi-total-institutions" name="kpis[total_institutions]" min="0">
             </div>
             <div class="bmgf-form-group">
-                <label for="kpi-total-enrollment">Total Enrollment</label>
+                <label for="kpi-total-enrollment">Total Calculus Enrollment</label>
                 <input type="number" id="kpi-total-enrollment" name="kpis[total_enrollment]" min="0">
             </div>
-            <div class="bmgf-form-group">&nbsp;</div>
+            <div class="bmgf-form-group">
+                <label for="kpi-total-fte-enrollment">Total FTE Enrollment</label>
+                <input type="number" id="kpi-total-fte-enrollment" name="kpis[total_fte_enrollment]" min="0">
+            </div>
         </div>
 
         <h3 class="bmgf-section-subtitle">Calculus I</h3>

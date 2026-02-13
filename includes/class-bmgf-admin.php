@@ -336,18 +336,19 @@ class BMGF_Admin {
 
         $current_data = $this->data_manager->get_all_data();
         $sections_to_save = [];
-        $state_data = [];
 
         if ($has_full_upload) {
             // Full refresh: keep existing behavior
             $sections_to_save = $computed;
-            $state_data = $sections_to_save['state_data'] ?? [];
-            unset($sections_to_save['state_data']);
         } else {
             // Partial refresh: update only sections that can be safely computed
             if ($has_institutions_upload) {
                 foreach (['sector_data', 'top_institutions', 'institution_size_data'] as $section) {
                     $sections_to_save[$section] = $computed[$section] ?? [];
+                }
+                // State-level data is driven primarily by institution enrollment totals.
+                if (isset($computed['state_data']) && is_array($computed['state_data'])) {
+                    $sections_to_save['state_data'] = $computed['state_data'];
                 }
             }
 
@@ -367,6 +368,7 @@ class BMGF_Admin {
                     'calc1_share',
                     'calc2_enrollment',
                     'calc2_share',
+                    'total_fte_enrollment',
                 ] as $field) {
                     if (isset($computed['kpis'][$field])) {
                         $kpis[$field] = $computed['kpis'][$field];
@@ -415,13 +417,6 @@ class BMGF_Admin {
 
         foreach ($sections_to_save as $section => $data) {
             $this->data_manager->save_section($section, $data);
-        }
-
-        // Regenerate state_data_updated.js only on full upload (institutions + courses).
-        if ($has_full_upload && !empty($state_data)) {
-            $js_content = BMGF_Data_Mapper::generate_state_js($state_data);
-            $js_path = BMGF_DASHBOARD_PATH . 'charts/state_data_updated.js';
-            file_put_contents($js_path, $js_content);
         }
 
         // Clean up temp files
@@ -488,6 +483,7 @@ class BMGF_Admin {
         $numeric_fields = [
             'total_institutions', 'total_enrollment', 'calc1_enrollment',
             'calc1_share', 'calc2_enrollment', 'calc2_share',
+            'total_fte_enrollment',
             'avg_price_calc1', 'avg_price_calc2', 'commercial_share',
             'oer_share', 'digital_share', 'print_share',
         ];

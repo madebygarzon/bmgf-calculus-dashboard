@@ -1,4 +1,4 @@
-const stateData = [
+const __BMGF_FALLBACK_STATE_DATA = [
     {"state": "Florida", "code": "FL", "lat": 27.766279, "lon": -81.686783, "lon_left": -82.33678300000001, "lon_right": -81.036783, "total": 308915, "total_fmt": "308K", "total_full": "308.915", "calc_i": 203239, "calc_i_fmt": "203K", "calc_ii": 105676, "calc_ii_fmt": "105K", "institutions": 41, "pub1": "Other", "pub1_enr": 118965, "pub2": "Cengage", "pub2_enr": 82171, "pub3": "Pearson", "pub3_enr": 75980},
     {"state": "California", "code": "CA", "lat": 36.116203, "lon": -119.681564, "lon_left": -120.331564, "lon_right": -119.03156399999999, "total": 247717, "total_fmt": "247K", "total_full": "247.717", "calc_i": 170772, "calc_i_fmt": "170K", "calc_ii": 76945, "calc_ii_fmt": "76K", "institutions": 135, "pub1": "Cengage", "pub1_enr": 149430, "pub2": "Pearson", "pub2_enr": 35826, "pub3": "Other", "pub3_enr": 26692},
     {"state": "Texas", "code": "TX", "lat": 31.054487, "lon": -97.563461, "lon_left": -98.21346100000001, "lon_right": -96.913461, "total": 148396, "total_fmt": "148K", "total_full": "148.396", "calc_i": 94032, "calc_i_fmt": "94K", "calc_ii": 54364, "calc_ii_fmt": "54K", "institutions": 68, "pub1": "Cengage", "pub1_enr": 75264, "pub2": "Pearson", "pub2_enr": 46591, "pub3": "Other", "pub3_enr": 11023},
@@ -52,3 +52,12 @@ const stateData = [
     {"state": "Wyoming", "code": "WY", "lat": 42.755966, "lon": -107.30249, "lon_left": -107.95249000000001, "lon_right": -106.65249, "total": 205, "total_fmt": "205", "total_full": "205", "calc_i": 126, "calc_i_fmt": "126", "calc_ii": 79, "calc_ii_fmt": "79", "institutions": 1, "pub1": "Cengage", "pub1_enr": 205, "pub2": "", "pub2_enr": 0, "pub3": "", "pub3_enr": 0},
     {"state": "Vermont", "code": "VT", "lat": 44.045876, "lon": -72.710686, "lon_left": -73.360686, "lon_right": -72.06068599999999, "total": 156, "total_fmt": "156", "total_full": "156", "calc_i": 95, "calc_i_fmt": "95", "calc_ii": 61, "calc_ii_fmt": "61", "institutions": 2, "pub1": "Unknown", "pub1_enr": 156, "pub2": "", "pub2_enr": 0, "pub3": "", "pub3_enr": 0},
 ];
+
+// Prefer runtime-computed state data (from uploads) when available.
+// Fallback to the bundled/demo dataset for local/static viewing.
+// eslint-disable-next-line no-var
+var stateData = (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.state_data) && window.BMGF_DATA.state_data.length)
+    ? window.BMGF_DATA.state_data
+    : __BMGF_FALLBACK_STATE_DATA;
+
+window.stateData = stateData;

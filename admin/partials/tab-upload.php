@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
                     </div>
                     <h3>Institutions File</h3>
                     <p>Drag & drop your institutions XLSX/CSV file here, or click to browse</p>
-                    <p class="bmgf-upload-hint">Required columns: State, Region, Sector, School, FTE Enrollment, Calc I/II Enrollment, Publisher_Norm</p>
+                    <p class="bmgf-upload-hint">Required columns: State, Region, Sector, School, FTE Enrollment, Calc I/II Enrollment, Publisher_Norm (or Publisher)</p>
                     <input type="file" class="bmgf-upload-input" accept=".xlsx,.csv" style="display:none;">
                     <div class="bmgf-upload-file-info" style="display:none;">
                         <span class="dashicons dashicons-yes-alt"></span>

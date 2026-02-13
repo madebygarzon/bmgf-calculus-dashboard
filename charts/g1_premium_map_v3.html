@@ -236,22 +236,22 @@
     <!-- Stats Bar (bottom center) -->
     <div class="stats-bar">
         <div class="stat-item">
-            <span class="stat-label">Total Enrollments</span>
-            <span class="stat-value">1.8M</span>
+            <span class="stat-label">Total Calculus Enrollment</span>
+            <span class="stat-value" id="stat-total">-</span>
         </div>
         <div class="stat-item">
             <span class="stat-label">Calc I</span>
-            <span class="stat-value teal">1.35M</span>
-            <span class="stat-pct">(67.5%)</span>
+            <span class="stat-value teal" id="stat-calc1">-</span>
+            <span class="stat-pct" id="stat-calc1-pct">(-)</span>
         </div>
         <div class="stat-item">
             <span class="stat-label">Calc II</span>
-            <span class="stat-value blue">652K</span>
-            <span class="stat-pct">(32.5%)</span>
+            <span class="stat-value blue" id="stat-calc2">-</span>
+            <span class="stat-pct" id="stat-calc2-pct">(-)</span>
         </div>
         <div class="stat-item">
             <span class="stat-label">Institutions</span>
-            <span class="stat-value">933</span>
+            <span class="stat-value" id="stat-institutions">-</span>
         </div>
     </div>
 
@@ -283,7 +283,11 @@
     </div>
 
     <script>
-        const allStateData = [
+        const __runtimeStateData = (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.state_data) && window.BMGF_DATA.state_data.length)
+            ? window.BMGF_DATA.state_data
+            : null;
+
+        const allStateData = __runtimeStateData || [
     {"state": "Florida", "code": "FL", "lat": 27.766279, "lon": -81.686783, "lon_left": -82.33678300000001, "lon_right": -81.036783, "total": 308915, "total_fmt": "308K", "total_full": "308.915", "calc_i": 203239, "calc_i_fmt": "203K", "calc_ii": 105676, "calc_ii_fmt": "105K", "institutions": 41, "pub1": "Other", "pub1_enr": 118965, "pub2": "Cengage", "pub2_enr": 82171, "pub3": "Pearson", "pub3_enr": 75980},
     {"state": "California", "code": "CA", "lat": 36.116203, "lon": -119.681564, "lon_left": -120.331564, "lon_right": -119.03156399999999, "total": 247717, "total_fmt": "247K", "total_full": "247.717", "calc_i": 170772, "calc_i_fmt": "170K", "calc_ii": 76945, "calc_ii_fmt": "76K", "institutions": 135, "pub1": "Cengage", "pub1_enr": 149430, "pub2": "Pearson", "pub2_enr": 35826, "pub3": "Other", "pub3_enr": 26692},
     {"state": "Texas", "code": "TX", "lat": 31.054487, "lon": -97.563461, "lon_left": -98.21346100000001, "lon_right": -96.913461, "total": 148396, "total_fmt": "148K", "total_full": "148.396", "calc_i": 94032, "calc_i_fmt": "94K", "calc_ii": 54364, "calc_ii_fmt": "54K", "institutions": 68, "pub1": "Cengage", "pub1_enr": 75264, "pub2": "Pearson", "pub2_enr": 46591, "pub3": "Other", "pub3_enr": 11023},
@@ -357,6 +361,56 @@
         };
 
         let stateData = allStateData;
+
+        function formatCompact(num) {
+            const n = Number(num) || 0;
+            if (n >= 1e6) {
+                const fixed = (n / 1e6).toFixed(n >= 10e6 ? 0 : 2);
+                return fixed.replace(/\.00$/, '').replace(/0$/, '') + 'M';
+            }
+            if (n >= 1e3) {
+                return Math.round(n / 1e3) + 'K';
+            }
+            return n.toLocaleString();
+        }
+
+        function updateStatsBar(data, filters) {
+            const rows = Array.isArray(data) ? data : [];
+
+            const totals = rows.reduce((acc, d) => {
+                acc.total += Number(d.total) || 0;
+                acc.calc1 += Number(d.calc_i) || 0;
+                acc.calc2 += Number(d.calc_ii) || 0;
+                acc.institutions += Number(d.institutions) || 0;
+                return acc;
+            }, { total: 0, calc1: 0, calc2: 0, institutions: 0 });
+
+            const totalEl = document.getElementById('stat-total');
+            const calc1El = document.getElementById('stat-calc1');
+            const calc2El = document.getElementById('stat-calc2');
+            const instEl = document.getElementById('stat-institutions');
+            const c1PctEl = document.getElementById('stat-calc1-pct');
+            const c2PctEl = document.getElementById('stat-calc2-pct');
+
+            const hasActiveFilters = !!(filters && Object.values(filters).some(v => v !== 'All'));
+            const kpis = (!hasActiveFilters && window.BMGF_DATA && window.BMGF_DATA.kpis) ? window.BMGF_DATA.kpis : null;
+
+            const baseTotal = kpis ? (Number(kpis.total_enrollment) || 0) : (totals.total || (totals.calc1 + totals.calc2) || 0);
+            const baseCalc1 = kpis ? (Number(kpis.calc1_enrollment) || 0) : totals.calc1;
+            const baseCalc2 = kpis ? (Number(kpis.calc2_enrollment) || 0) : totals.calc2;
+            const baseInst = kpis ? (Number(kpis.total_institutions) || 0) : totals.institutions;
+
+            const denom = baseTotal || (baseCalc1 + baseCalc2) || 0;
+            const c1pct = kpis ? (Number(kpis.calc1_share) || 0) : (denom > 0 ? (baseCalc1 / denom * 100) : 0);
+            const c2pct = kpis ? (Number(kpis.calc2_share) || 0) : (denom > 0 ? (baseCalc2 / denom * 100) : 0);
+
+            if (totalEl) totalEl.textContent = formatCompact(baseTotal || denom);
+            if (calc1El) calc1El.textContent = formatCompact(baseCalc1);
+            if (calc2El) calc2El.textContent = formatCompact(baseCalc2);
+            if (instEl) instEl.textContent = baseInst.toLocaleString();
+            if (c1PctEl) c1PctEl.textContent = '(' + c1pct.toFixed(1).replace(/\.0$/, '') + '%)';
+            if (c2PctEl) c2PctEl.textContent = '(' + c2pct.toFixed(1).replace(/\.0$/, '') + '%)';
+        }
         let currentView = 'enrollment';
         let deckgl = null;
 
@@ -676,7 +730,7 @@
                             <span style="color: #00F0D4; font-weight: 700; font-size: 13px;">INSTITUTIONS</span>
                             <span style="color: #FFFFFF; font-weight: 800; font-size: 28px;">${object.institutions}</span>
                         </div>
-                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${object.courses} courses offered</div>
+                        <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">${(object.courses || 0).toLocaleString()} courses offered</div>
                     </div>
                     <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div>
@@ -832,6 +886,7 @@
 
             updateLegend(view);
             updateTopPanel(view);
+            updateStatsBar(stateData, window.BMGF_CURRENT_FILTERS);
         }
 
         function init() {
@@ -846,6 +901,7 @@
 
             updateLegend('enrollment');
             updateTopPanel('enrollment');
+            updateStatsBar(stateData, window.BMGF_CURRENT_FILTERS);
         }
 
         init();
@@ -861,6 +917,7 @@
             }
             // Re-render current view with filtered data
             setView(currentView);
+            updateStatsBar(stateData, filters);
         };
     </script>
     <script src="filter-receiver.js"></script>

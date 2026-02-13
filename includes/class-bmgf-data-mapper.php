@@ -14,7 +14,7 @@ class BMGF_Data_Mapper {
     public const INSTITUTION_REQUIRED = [
         'State', 'Region', 'Sector', 'School', 'FTE Enrollment',
         'Calc Level', 'Calc I Enrollment', 'Calc II Enrollment',
-        'Publisher_Norm', 'Avg_Price',
+        ['Publisher_Norm', 'Publisher'], 'Avg_Price',
     ];
 
     /** Required columns for courses file */
@@ -195,23 +195,28 @@ class BMGF_Data_Mapper {
     private static function compute_kpis(array $inst_rows, array $course_rows): array {
         $total_calc1 = 0;
         $total_calc2 = 0;
+        $total_fte = 0;
         $unique_institutions = [];
         $unique_states = [];
         $prices_calc1 = [];
         $prices_calc2 = [];
 
         foreach ($inst_rows as $row) {
+            $total_fte += (int)($row['FTE Enrollment'] ?? 0);
             $calc1 = (int)($row['Calc I Enrollment'] ?? 0);
             $calc2 = (int)($row['Calc II Enrollment'] ?? 0);
             $total_calc1 += $calc1;
             $total_calc2 += $calc2;
 
+            // Prefer stable institution identifiers when available.
+            $inst_id = trim($row['IPED ID'] ?? '');
             $school = trim($row['School'] ?? '');
-            if ($school !== '') {
-                $unique_institutions[$school] = true;
+            $inst_key = $inst_id !== '' ? $inst_id : $school;
+            if ($inst_key !== '') {
+                $unique_institutions[$inst_key] = true;
             }
 
-            $state = trim($row['State'] ?? '');
+            $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state !== '') {
                 $unique_states[$state] = true;
             }
@@ -263,6 +268,8 @@ class BMGF_Data_Mapper {
             'calc1_share' => $calc1_share,
             'calc2_enrollment' => $total_calc2,
             'calc2_share' => $calc2_share,
+            // Sum of institutional FTE across the institution dataset.
+            'total_fte_enrollment' => $total_fte,
             'avg_price_calc1' => $avg_price_calc1,
             'avg_price_calc2' => $avg_price_calc2,
             'commercial_share' => $commercial_share,
@@ -559,7 +566,7 @@ class BMGF_Data_Mapper {
         $publishers = [];
 
         foreach ($inst_rows as $row) {
-            $state = trim($row['State'] ?? '');
+            $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state !== '') $states[$state] = true;
 
             $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
@@ -568,12 +575,12 @@ class BMGF_Data_Mapper {
             $sector = self::normalize_sector(trim($row['Sector'] ?? ''));
             if ($sector !== '') $sectors[$sector] = true;
 
-            $pub = trim($row['Publisher_Norm'] ?? '');
+            $pub = trim(($row['Publisher_Norm'] ?? ($row['Publisher'] ?? '')));
             if ($pub !== '') $publishers[$pub] = true;
         }
 
         foreach ($course_rows as $row) {
-            $state = trim($row['State'] ?? '');
+            $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state !== '') $states[$state] = true;
 
             $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
@@ -606,30 +613,34 @@ class BMGF_Data_Mapper {
      */
     private static function compute_state_data(array $inst_rows, array $course_rows): array {
         // Aggregate institution data per state
-        $state_inst = []; // state => ['calc1' => int, 'calc2' => int, 'institutions' => set]
+        $state_inst = []; // state => ['calc1' => int, 'calc2' => int, 'fte' => int, 'institutions' => set]
 
         foreach ($inst_rows as $row) {
-            $state = trim($row['State'] ?? '');
+            $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state === '') continue;
 
             if (!isset($state_inst[$state])) {
-                $state_inst[$state] = ['calc1' => 0, 'calc2' => 0, 'institutions' => []];
+                $state_inst[$state] = ['calc1' => 0, 'calc2' => 0, 'fte' => 0, 'institutions' => []];
             }
 
             $state_inst[$state]['calc1'] += (int)($row['Calc I Enrollment'] ?? 0);
             $state_inst[$state]['calc2'] += (int)($row['Calc II Enrollment'] ?? 0);
+            $state_inst[$state]['fte'] += (int)($row['FTE Enrollment'] ?? 0);
 
+            $inst_id = trim($row['IPED ID'] ?? '');
             $school = trim($row['School'] ?? '');
-            if ($school !== '') {
-                $state_inst[$state]['institutions'][$school] = true;
+            $inst_key = $inst_id !== '' ? $inst_id : $school;
+            if ($inst_key !== '') {
+                $state_inst[$state]['institutions'][$inst_key] = true;
             }
         }
 
         // Aggregate publisher data per state from courses
         $state_publishers = []; // state => publisher => enrollment
+        $state_courses = []; // state => course-record count
 
         foreach ($course_rows as $row) {
-            $state = trim($row['State'] ?? '');
+            $state = self::normalize_state(trim($row['State'] ?? ''));
             $publisher = trim($row['Publisher_Normalized'] ?? '');
             $enrollment = (int)($row['Enrollments'] ?? 0);
 
@@ -638,6 +649,7 @@ class BMGF_Data_Mapper {
             if (!isset($state_publishers[$state])) {
                 $state_publishers[$state] = [];
             }
+            $state_courses[$state] = ($state_courses[$state] ?? 0) + 1;
             if ($publisher !== '') {
                 $state_publishers[$state][$publisher] = ($state_publishers[$state][$publisher] ?? 0) + $enrollment;
             }
@@ -685,7 +697,9 @@ class BMGF_Data_Mapper {
                 'calc_i_fmt' => $calc1_fmt,
                 'calc_ii' => $data['calc2'],
                 'calc_ii_fmt' => $calc2_fmt,
+                'fte' => $data['fte'],
                 'institutions' => $inst_count,
+                'courses' => (int)($state_courses[$state] ?? 0),
                 'pub1' => $pub_list[0] ?? '',
                 'pub1_enr' => $pub_enr[0] ?? 0,
                 'pub2' => $pub_list[1] ?? '',
@@ -731,6 +745,28 @@ class BMGF_Data_Mapper {
         }
         if (strpos($lower, '2') !== false && strpos($lower, 'private') !== false) {
             return '2-Year Private';
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Normalize state field to a display-friendly full name when given a 2-letter code.
+     * Many source files use USPS codes (e.g., "CA"); the dashboard expects full names (e.g., "California").
+     */
+    private static function normalize_state(string $raw): string {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        $upper = strtoupper($raw);
+        if (strlen($upper) === 2) {
+            foreach (self::STATE_COORDS as $name => $coords) {
+                if (($coords['code'] ?? '') === $upper) {
+                    return $name;
+                }
+            }
         }
 
         return $raw;

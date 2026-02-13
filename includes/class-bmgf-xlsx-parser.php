@@ -416,8 +416,20 @@ class BMGF_XLSX_Parser {
         $missing = [];
 
         foreach ($required as $col) {
-            if (!in_array(strtolower(trim($col)), $normalized, true)) {
-                $missing[] = $col;
+            // Allow either a single required column name or a list of acceptable aliases.
+            // Example: ['Publisher_Norm', 'Publisher'] means "either column is acceptable".
+            $candidates = is_array($col) ? $col : [$col];
+
+            $found = false;
+            foreach ($candidates as $candidate) {
+                if (in_array(strtolower(trim((string)$candidate)), $normalized, true)) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                // Keep the first candidate as the "missing" label to avoid noisy messages.
+                $missing[] = (string)($candidates[0] ?? '');
             }
         }
 

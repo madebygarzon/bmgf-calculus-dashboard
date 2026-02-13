@@ -95,6 +95,8 @@ class BMGF_Data_Manager {
             'period_data' => $this->get_default_period_data(),
             'institution_size_data' => $this->get_default_institution_size_data(),
             'filters' => $this->get_default_filters(),
+            // Used by state-level visuals and filter aggregation (map, state comparisons, etc.).
+            'state_data' => $this->get_default_state_data(),
         ];
     }
 
@@ -109,6 +111,7 @@ class BMGF_Data_Manager {
             'calc1_share' => 66.2,
             'calc2_enrollment' => 614939,
             'calc2_share' => 33.8,
+            'total_fte_enrollment' => 10703763,
             'avg_price_calc1' => 125.50,
             'avg_price_calc2' => 118.75,
             'commercial_share' => 78,
@@ -116,6 +119,12 @@ class BMGF_Data_Manager {
             'digital_share' => 85,
             'print_share' => 15,
         ];
+    }
+
+    private function get_default_state_data(): array {
+        // Kept empty by default; charts can fall back to their embedded/demo data when state data
+        // hasn't been uploaded/computed yet.
+        return [];
     }
 
     /**
@@ -337,6 +346,7 @@ class BMGF_Data_Manager {
             'periods' => $data['period_data'],
             'institutionSizes' => $data['institution_size_data'],
             'filters' => $data['filters'],
+            'state_data' => $data['state_data'] ?? [],
         ];
     }
 }
