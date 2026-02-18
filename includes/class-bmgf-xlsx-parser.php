@@ -18,13 +18,16 @@ class BMGF_XLSX_Parser {
      * @return array ['headers' => [...], 'rows' => [[...], ...]]
      * @throws Exception on parse failure
      */
-    public static function parse(string $file_path): array {
+    public static function parse(string $file_path, string $declared_ext = '', string $preferred_sheet = ''): array {
         if (!file_exists($file_path)) {
             throw new Exception('File not found: ' . basename($file_path));
         }
 
         // Detect format by content, not just extension (tmp files have no extension)
-        $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        $ext = strtolower(trim($declared_ext));
+        if ($ext === '') {
+            $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        }
 
         // If no extension (temp file), try to detect by content
         if ($ext === '' || $ext === 'tmp') {
@@ -36,14 +39,14 @@ class BMGF_XLSX_Parser {
         @set_time_limit(300);
 
         if ($ext === 'xlsx') {
-            return self::parse_xlsx($file_path);
+            return self::parse_xlsx($file_path, $preferred_sheet);
         } elseif ($ext === 'csv') {
             return self::parse_csv($file_path);
         }
 
         // Last resort: try XLSX first, then CSV
         try {
-            return self::parse_xlsx($file_path);
+            return self::parse_xlsx($file_path, $preferred_sheet);
         } catch (Exception $e) {
             try {
                 return self::parse_csv($file_path);
@@ -74,7 +77,7 @@ class BMGF_XLSX_Parser {
     /**
      * Parse XLSX file using ZipArchive + SimpleXML
      */
-    private static function parse_xlsx(string $file_path): array {
+    private static function parse_xlsx(string $file_path, string $preferred_sheet = ''): array {
         if (!class_exists('ZipArchive')) {
             throw new Exception('ZipArchive PHP extension is required to parse XLSX files. Contact your hosting provider.');
         }
@@ -88,17 +91,60 @@ class BMGF_XLSX_Parser {
         // Read shared strings
         $shared_strings = self::read_shared_strings($zip);
 
-        // Find the target worksheet
-        $sheet_file = self::find_target_sheet($zip);
+        // Try preferred sheet first, then any other worksheet as fallback.
+        $sheet_candidates = self::get_sheet_candidates($zip, $preferred_sheet);
+        $last_error = '';
 
-        $sheet_xml = $zip->getFromName($sheet_file);
-        $zip->close();
+        foreach ($sheet_candidates as $sheet_file) {
+            $sheet_xml = $zip->getFromName($sheet_file);
+            if ($sheet_xml === false) {
+                $last_error = 'Could not read worksheet "' . $sheet_file . '" from XLSX file.';
+                continue;
+            }
 
-        if ($sheet_xml === false) {
-            throw new Exception('Could not read worksheet "' . $sheet_file . '" from XLSX file.');
+            try {
+                $parsed = self::parse_sheet_xml($sheet_xml, $shared_strings);
+                if (!empty($parsed['rows'])) {
+                    $zip->close();
+                    return $parsed;
+                }
+                $last_error = 'Worksheet "' . $sheet_file . '" contains no data rows.';
+            } catch (Exception $e) {
+                $last_error = $e->getMessage();
+            }
         }
 
-        return self::parse_sheet_xml($sheet_xml, $shared_strings);
+        $zip->close();
+        throw new Exception($last_error !== '' ? $last_error : 'No worksheet with data rows was found in XLSX file.');
+    }
+
+    /**
+     * Build ordered worksheet candidate list: preferred target first, then all worksheets.
+     */
+    private static function get_sheet_candidates(ZipArchive $zip, string $preferred_sheet = ''): array {
+        $candidates = [];
+
+        try {
+            $preferred = self::find_target_sheet($zip, $preferred_sheet);
+            if ($preferred !== '') {
+                $candidates[] = $preferred;
+            }
+        } catch (Exception $e) {
+            // Ignore and continue with scan fallback below.
+        }
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (preg_match('#^xl/worksheets/sheet\d+\.xml$#', $name) && !in_array($name, $candidates, true)) {
+                $candidates[] = $name;
+            }
+        }
+
+        if (empty($candidates)) {
+            throw new Exception('No worksheet found in XLSX file.');
+        }
+
+        return $candidates;
     }
 
     /**
@@ -136,7 +182,7 @@ class BMGF_XLSX_Parser {
      * Find the target worksheet file path inside the XLSX zip
      * Prefers sheets named "All_*" or "All *", falls back to first sheet
      */
-    private static function find_target_sheet(ZipArchive $zip): string {
+    private static function find_target_sheet(ZipArchive $zip, string $preferred_sheet = ''): string {
         // Try to read workbook to find the right sheet
         $workbook_xml = $zip->getFromName('xl/workbook.xml');
         if ($workbook_xml === false) {
@@ -158,15 +204,27 @@ class BMGF_XLSX_Parser {
             return self::find_sheet_fallback($zip);
         }
 
-        // Find target sheet (prefer "All_*")
+        // Find target sheet:
+        // 1) explicit preferred sheet name (exact, case-insensitive)
+        // 2) generic "All_*" fallback
         $target_index = 0;
-        $target_name = '';
-        foreach ($sheets as $idx => $sheet) {
-            $name = (string)$sheet['name'];
-            if (stripos($name, 'All_') === 0 || stripos($name, 'All ') === 0) {
-                $target_index = $idx;
-                $target_name = $name;
-                break;
+        $preferred_sheet = strtolower(trim($preferred_sheet));
+
+        if ($preferred_sheet !== '') {
+            foreach ($sheets as $idx => $sheet) {
+                $name = strtolower(trim((string)$sheet['name']));
+                if ($name === $preferred_sheet) {
+                    $target_index = $idx;
+                    break;
+                }
+            }
+        } else {
+            foreach ($sheets as $idx => $sheet) {
+                $name = (string)$sheet['name'];
+                if (stripos($name, 'All_') === 0 || stripos($name, 'All ') === 0) {
+                    $target_index = $idx;
+                    break;
+                }
             }
         }
 
@@ -298,14 +356,17 @@ class BMGF_XLSX_Parser {
 
         foreach ($xml_rows as $xml_row) {
             $row_data = [];
-            foreach ($xml_row->xpath('s:c') as $cell) {
+            // Parse cells using explicit namespace children for better compatibility
+            // across different SimpleXML namespace/xpath behaviors.
+            $cells = $xml_row->children($default_ns)->c ?? [];
+            foreach ($cells as $cell) {
                 $ref = (string)$cell['r'];
                 $col_index = self::col_ref_to_index($ref);
                 $type = (string)$cell['t'];
-                $val_node = $cell->xpath('s:v');
                 $value = '';
 
-                if (!empty($val_node)) {
+                $val_node = $cell->children($default_ns)->v;
+                if (isset($val_node[0])) {
                     $raw = (string)$val_node[0];
                     if ($type === 's') {
                         $idx = (int)$raw;
@@ -315,9 +376,26 @@ class BMGF_XLSX_Parser {
                     }
                 } else {
                     // Check for inline string
-                    $is_node = $cell->xpath('s:is/s:t');
-                    if (!empty($is_node)) {
-                        $value = (string)$is_node[0];
+                    $is = $cell->children($default_ns)->is;
+                    if (isset($is[0])) {
+                        // Simple inline string: <is><t>...</t></is>
+                        $t = $is[0]->children($default_ns)->t;
+                        if (isset($t[0])) {
+                            $value = (string)$t[0];
+                        } else {
+                            // Rich inline string: <is><r><t>..</t></r>...</is>
+                            $rich_runs = $is[0]->children($default_ns)->r ?? [];
+                            $parts = [];
+                            foreach ($rich_runs as $run) {
+                                $rt = $run->children($default_ns)->t;
+                                if (isset($rt[0])) {
+                                    $parts[] = (string)$rt[0];
+                                }
+                            }
+                            if (!empty($parts)) {
+                                $value = implode('', $parts);
+                            }
+                        }
                     }
                 }
 

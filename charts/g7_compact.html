@@ -133,14 +133,15 @@
             }, 150);
         });
 
-        // Filter update handler
-        window.handleFilterUpdate = function(filters, filteredData) {
-            if (!filteredData || filteredData.length === 0) return;
+        function renderFromFilteredData(filteredData) {
+            if (!Array.isArray(filteredData) || filteredData.length === 0) {
+                return false;
+            }
 
             const stateToRegion = window.BMGF_STATE_TO_REGION || {};
             const regionMap = {};
-            const regionOrder = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mountains', 'Plains', 'New England'];
-            const regionLabels = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mtns', 'Plains', 'New England'];
+            const regionOrder = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mountains', 'Plains', 'New England', 'Outlying'];
+            const regionLabels = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mtns', 'Plains', 'New England', 'Outlying'];
 
             regionOrder.forEach(r => { regionMap[r] = { calc1: 0, calc2: 0 }; });
 
@@ -179,6 +180,33 @@
             Plotly.relayout('chart', {
                 'yaxis.range': [0, Math.max(...newCalc1, 1) * 1.25]
             });
+
+            return true;
+        }
+
+        function renderBaseData() {
+            Plotly.animate('chart', {
+                data: [
+                    { x: regions, y: calc1Data, text: calc1Data.map(v => v + 'K') },
+                    { x: regions, y: calc2Data, text: calc2Data.map(v => v + 'K') }
+                ],
+                traces: [0, 1]
+            }, {
+                transition: { duration: 400, easing: 'cubic-out' },
+                frame: { duration: 400 }
+            });
+
+            Plotly.relayout('chart', {
+                'yaxis.range': [0, Math.max(...calc1Data, 1) * 1.25]
+            });
+        }
+
+        // Filter update handler
+        window.handleFilterUpdate = function(filters, filteredData) {
+            const rendered = renderFromFilteredData(filteredData);
+            if (!rendered) {
+                renderBaseData();
+            }
         };
     </script>
     <script src="filter-receiver.js"></script>

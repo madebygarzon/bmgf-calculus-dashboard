@@ -240,7 +240,8 @@ class BMGF_Admin {
 
         // Parse the file
         try {
-            $parsed = BMGF_XLSX_Parser::parse($file['tmp_name']);
+            $preferred_sheet = $file_type === 'institutions' ? 'All_Institutions' : 'All_Courses';
+            $parsed = BMGF_XLSX_Parser::parse($file['tmp_name'], $ext, $preferred_sheet);
         } catch (Exception $e) {
             wp_send_json_error(['message' => 'Parse error: ' . $e->getMessage()]);
             return;

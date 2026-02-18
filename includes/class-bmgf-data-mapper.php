@@ -564,6 +564,8 @@ class BMGF_Data_Mapper {
         $regions = [];
         $sectors = [];
         $publishers = [];
+        $periods = [];
+        $institutions = [];
 
         foreach ($inst_rows as $row) {
             $state = self::normalize_state(trim($row['State'] ?? ''));
@@ -572,11 +574,10 @@ class BMGF_Data_Mapper {
             $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
             if ($region !== '') $regions[$region] = true;
 
-            $sector = self::normalize_sector(trim($row['Sector'] ?? ''));
+            $sector = trim($row['Sector'] ?? '');
             if ($sector !== '') $sectors[$sector] = true;
 
-            $pub = trim(($row['Publisher_Norm'] ?? ($row['Publisher'] ?? '')));
-            if ($pub !== '') $publishers[$pub] = true;
+            // Publisher filter must come from course-level source (All_Courses -> Publisher_Normalized).
         }
 
         foreach ($course_rows as $row) {
@@ -586,23 +587,35 @@ class BMGF_Data_Mapper {
             $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
             if ($region !== '') $regions[$region] = true;
 
-            $sector = self::normalize_sector(trim($row['Sector'] ?? ''));
+            $sector = trim($row['Sector'] ?? '');
             if ($sector !== '') $sectors[$sector] = true;
 
             $pub = trim($row['Publisher_Normalized'] ?? '');
             if ($pub !== '') $publishers[$pub] = true;
+
+            $period = trim($row['Period'] ?? '');
+            if ($period !== '') $periods[$period] = true;
+
+            $school = trim($row['School'] ?? '');
+            if ($school !== '' && strtolower($school) !== '(blank)') {
+                $institutions[$school] = true;
+            }
         }
 
         ksort($states);
         ksort($regions);
         ksort($sectors);
         ksort($publishers);
+        ksort($periods);
+        ksort($institutions);
 
         return [
             'states' => array_keys($states),
             'regions' => array_keys($regions),
             'sectors' => array_keys($sectors),
             'publishers' => array_keys($publishers),
+            'periods' => array_keys($periods),
+            'institutions' => array_keys($institutions),
             'courses' => ['Calculus I', 'Calculus II', 'Calculus I & II'],
             'price_ranges' => ['Free (OER)', '$1 - $50', '$51 - $100', '$101 - $150', '$151 - $200', '$200+'],
         ];
@@ -638,11 +651,14 @@ class BMGF_Data_Mapper {
         // Aggregate publisher data per state from courses
         $state_publishers = []; // state => publisher => enrollment
         $state_courses = []; // state => course-record count
+        $state_periods = []; // state => period => ['total'=>int,'calc_i'=>int,'calc_ii'=>int,'courses'=>int]
 
         foreach ($course_rows as $row) {
             $state = self::normalize_state(trim($row['State'] ?? ''));
             $publisher = trim($row['Publisher_Normalized'] ?? '');
             $enrollment = (int)($row['Enrollments'] ?? 0);
+            $period = trim($row['Period'] ?? '');
+            $calc_level = strtoupper(trim($row['Calc Level'] ?? ''));
 
             if ($state === '') continue;
 
@@ -652,6 +668,24 @@ class BMGF_Data_Mapper {
             $state_courses[$state] = ($state_courses[$state] ?? 0) + 1;
             if ($publisher !== '') {
                 $state_publishers[$state][$publisher] = ($state_publishers[$state][$publisher] ?? 0) + $enrollment;
+            }
+
+            if ($period !== '') {
+                if (!isset($state_periods[$state])) {
+                    $state_periods[$state] = [];
+                }
+                if (!isset($state_periods[$state][$period])) {
+                    $state_periods[$state][$period] = ['total' => 0, 'calc_i' => 0, 'calc_ii' => 0, 'courses' => 0];
+                }
+
+                $state_periods[$state][$period]['total'] += $enrollment;
+                $state_periods[$state][$period]['courses'] += 1;
+
+                if ($calc_level === 'CALC_II') {
+                    $state_periods[$state][$period]['calc_ii'] += $enrollment;
+                } else {
+                    $state_periods[$state][$period]['calc_i'] += $enrollment;
+                }
             }
         }
 
@@ -682,6 +716,10 @@ class BMGF_Data_Mapper {
             $pub_enr = array_values($top_pubs);
 
             $total_full = $total >= 1000 ? number_format($total / 1000, 3) : (string)$total;
+            $period_breakdown = $state_periods[$state] ?? [];
+            if (!empty($period_breakdown)) {
+                ksort($period_breakdown);
+            }
 
             $entry = [
                 'state' => $state,
@@ -706,6 +744,7 @@ class BMGF_Data_Mapper {
                 'pub2_enr' => $pub_enr[1] ?? 0,
                 'pub3' => $pub_list[2] ?? '',
                 'pub3_enr' => $pub_enr[2] ?? 0,
+                'period_breakdown' => $period_breakdown,
             ];
 
             $result[] = $entry;

@@ -9,6 +9,7 @@
     // Store current filters
     window.BMGF_CURRENT_FILTERS = {
         course: 'All',
+        period: 'Fall 2025',
         state: 'All',
         sector: 'All',
         region: 'All',
@@ -38,7 +39,8 @@
         'Minnesota': 'Plains', 'Iowa': 'Plains', 'Missouri': 'Plains', 'Kansas': 'Plains',
         'Nebraska': 'Plains', 'South Dakota': 'Plains', 'North Dakota': 'Plains',
         'Massachusetts': 'New England', 'Connecticut': 'New England', 'Rhode Island': 'New England',
-        'Maine': 'New England', 'New Hampshire': 'New England', 'Vermont': 'New England'
+        'Maine': 'New England', 'New Hampshire': 'New England', 'Vermont': 'New England',
+        'Puerto Rico': 'Outlying', 'Guam': 'Outlying'
     };
 
     // Listen for filter updates from parent

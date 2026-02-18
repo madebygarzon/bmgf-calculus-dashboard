@@ -130,12 +130,6 @@
             return val.toString();
         }
 
-        function hasActiveFilters(filters) {
-            if (!filters) return false;
-            const effectiveKeys = ['course', 'state', 'region', 'publisher'];
-            return effectiveKeys.some((key) => filters[key] && filters[key] !== 'All');
-        }
-
         function buildConfigFromKpis() {
             if (window.BMGF_DATA && window.BMGF_DATA.kpis) {
                 const kpis = window.BMGF_DATA.kpis;
@@ -298,17 +292,15 @@
 
         // Filter update handler
         window.handleFilterUpdate = function(filters, filteredData) {
-            if (!hasActiveFilters(filters)) {
+            // Always prefer controller-provided filtered data so every filter
+            // (state/sector/region/publisher/course/period/etc.) is reflected.
+            if (!Array.isArray(filteredData)) {
                 renderChart(buildConfigFromKpis());
                 return;
             }
 
             const filteredConfig = buildConfigFromFilteredData(filteredData);
-            if (filteredConfig) {
-                renderChart(filteredConfig);
-            } else {
-                renderChart(buildConfigFromKpis());
-            }
+            renderChart(filteredConfig || buildConfigFromKpis());
         };
     </script>
     <script src="filter-receiver.js"></script>

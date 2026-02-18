@@ -12,6 +12,7 @@
     // Default filter state
     const defaultFilters = {
         course: 'All',
+        period: 'Fall 2025',
         state: 'All',
         sector: 'All',
         region: 'All',
@@ -56,6 +57,71 @@
         return window.BMGF_DATA.kpis;
     }
 
+    // Complete state/jurisdiction dictionary used by the "State" filter.
+    const STATE_CODE_MAP = Object.freeze({
+        'Alabama': 'AL',
+        'Alaska': 'AK',
+        'Arizona': 'AZ',
+        'Arkansas': 'AR',
+        'California': 'CA',
+        'Colorado': 'CO',
+        'Connecticut': 'CT',
+        'Delaware': 'DE',
+        'District of Columbia': 'DC',
+        'Florida': 'FL',
+        'Georgia': 'GA',
+        'Guam': 'GU',
+        'Hawaii': 'HI',
+        'Idaho': 'ID',
+        'Illinois': 'IL',
+        'Indiana': 'IN',
+        'Iowa': 'IA',
+        'Kansas': 'KS',
+        'Kentucky': 'KY',
+        'Louisiana': 'LA',
+        'Maine': 'ME',
+        'Maryland': 'MD',
+        'Massachusetts': 'MA',
+        'Michigan': 'MI',
+        'Minnesota': 'MN',
+        'Mississippi': 'MS',
+        'Missouri': 'MO',
+        'Montana': 'MT',
+        'Nebraska': 'NE',
+        'Nevada': 'NV',
+        'New Hampshire': 'NH',
+        'New Jersey': 'NJ',
+        'New Mexico': 'NM',
+        'New York': 'NY',
+        'North Carolina': 'NC',
+        'North Dakota': 'ND',
+        'Ohio': 'OH',
+        'Oklahoma': 'OK',
+        'Oregon': 'OR',
+        'Pennsylvania': 'PA',
+        'Puerto Rico': 'PR',
+        'Rhode Island': 'RI',
+        'South Carolina': 'SC',
+        'South Dakota': 'SD',
+        'Tennessee': 'TN',
+        'Texas': 'TX',
+        'Utah': 'UT',
+        'Vermont': 'VT',
+        'Virginia': 'VA',
+        'Washington': 'WA',
+        'West Virginia': 'WV',
+        'Wisconsin': 'WI',
+        'Wyoming': 'WY'
+    });
+
+    const STATE_NAME_BY_CODE = Object.freeze(
+        Object.fromEntries(Object.entries(STATE_CODE_MAP).map(([name, code]) => [code, name]))
+    );
+
+    // Expose dictionaries for cross-chart reuse.
+    window.BMGF_STATE_CODE_MAP = STATE_CODE_MAP;
+    window.BMGF_STATE_NAME_BY_CODE = STATE_NAME_BY_CODE;
+
     // Region mapping for states
     const stateToRegion = {
         'Florida': 'Southeast', 'Georgia': 'Southeast', 'Alabama': 'Southeast',
@@ -74,8 +140,151 @@
         'Minnesota': 'Plains', 'Iowa': 'Plains', 'Missouri': 'Plains', 'Kansas': 'Plains',
         'Nebraska': 'Plains', 'South Dakota': 'Plains', 'North Dakota': 'Plains',
         'Massachusetts': 'New England', 'Connecticut': 'New England', 'Rhode Island': 'New England',
-        'Maine': 'New England', 'New Hampshire': 'New England', 'Vermont': 'New England'
+        'Maine': 'New England', 'New Hampshire': 'New England', 'Vermont': 'New England',
+        'Puerto Rico': 'Outlying', 'Guam': 'Outlying'
     };
+
+    function getDashboardFilters() {
+        return (window.BMGF_DATA && window.BMGF_DATA.filters && typeof window.BMGF_DATA.filters === 'object')
+            ? window.BMGF_DATA.filters
+            : {};
+    }
+
+    function uniqueCleanStrings(values) {
+        const set = new Set();
+        (Array.isArray(values) ? values : []).forEach(value => {
+            if (value === undefined || value === null) return;
+            const clean = String(value).trim();
+            if (!clean || clean.toLowerCase() === 'all') return;
+            set.add(clean);
+        });
+        return Array.from(set);
+    }
+
+    function normalizeCourseValue(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return '';
+        if (raw === 'calc i' || raw === 'calculus i' || raw === 'calc_i') return 'Calc I';
+        if (raw === 'calc ii' || raw === 'calculus ii' || raw === 'calc_ii') return 'Calc II';
+        if (raw.includes('calc') && raw.includes('ii') && !raw.includes('iii')) return 'Calc II';
+        if (raw.includes('calc') && raw.includes('i')) return 'Calc I';
+        return '';
+    }
+
+    function normalizeRegionValue(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const base = raw.replace(/\s*\(.*\)\s*$/, '');
+        const lower = base.toLowerCase();
+        if (lower.includes('other u.s.') || lower.includes('outlying')) return 'Outlying';
+        return base;
+    }
+
+    function getOptionsForFilter(filterName) {
+        const dashboardFilters = getDashboardFilters();
+
+        if (filterName === 'state') {
+            return Object.keys(STATE_CODE_MAP)
+                .sort((a, b) => a.localeCompare(b))
+                .map(stateName => ({
+                    value: stateName,
+                    label: stateName + ' (' + STATE_CODE_MAP[stateName] + ')'
+                }));
+        }
+
+        if (filterName === 'course') {
+            const normalized = uniqueCleanStrings(dashboardFilters.courses)
+                .map(normalizeCourseValue)
+                .filter(Boolean);
+            const uniqueCourses = Array.from(new Set(normalized));
+            const ordered = ['Calc I', 'Calc II'].filter(course => uniqueCourses.includes(course));
+            return (ordered.length > 0 ? ordered : ['Calc I', 'Calc II']).map(course => ({ value: course, label: course }));
+        }
+
+        if (filterName === 'sector') {
+            return uniqueCleanStrings(dashboardFilters.sectors)
+                .sort((a, b) => a.localeCompare(b))
+                .map(sector => ({ value: sector, label: sector }));
+        }
+
+        if (filterName === 'region') {
+            const regions = uniqueCleanStrings(dashboardFilters.regions)
+                .map(normalizeRegionValue)
+                .filter(Boolean);
+            return Array.from(new Set(regions))
+                .sort((a, b) => a.localeCompare(b))
+                .map(region => ({ value: region, label: region }));
+        }
+
+        if (filterName === 'publisher') {
+            return uniqueCleanStrings(dashboardFilters.publishers)
+                .sort((a, b) => a.localeCompare(b))
+                .map(publisher => ({ value: publisher, label: publisher }));
+        }
+
+        return [];
+    }
+
+    function normalizeSavedFilterValue(filterName, savedValue) {
+        if (savedValue === undefined || savedValue === null) return 'All';
+        const text = String(savedValue).trim();
+        if (!text) return 'All';
+
+        if (filterName === 'state') {
+            const upper = text.toUpperCase();
+            if (STATE_NAME_BY_CODE[upper]) {
+                return STATE_NAME_BY_CODE[upper];
+            }
+        }
+
+        if (filterName === 'course') {
+            return normalizeCourseValue(text) || 'All';
+        }
+
+        if (filterName === 'region') {
+            return normalizeRegionValue(text) || 'All';
+        }
+
+        return text;
+    }
+
+    function setSelectOptions(select, filterName, options) {
+        const selected = normalizeSavedFilterValue(filterName, currentFilters[filterName]);
+
+        select.innerHTML = '';
+        select.add(new Option('All', 'All'));
+        options.forEach(option => {
+            select.add(new Option(option.label, option.value));
+        });
+
+        const validValues = new Set(['All', ...options.map(option => option.value)]);
+        const value = validValues.has(selected) ? selected : 'All';
+        select.value = value;
+        currentFilters[filterName] = value;
+    }
+
+    function populateDynamicFilterOptions() {
+        const filterGroups = document.querySelectorAll('.filter-group');
+        filterGroups.forEach(group => {
+            const label = group.querySelector('.filter-label');
+            const select = group.querySelector('.filter-select');
+            if (!label || !select) return;
+
+            const filterName = getFilterNameFromLabel(label.textContent.trim());
+            if (!filterName) return;
+
+            const options = getOptionsForFilter(filterName);
+            if (options.length > 0) {
+                setSelectOptions(select, filterName, options);
+            } else {
+                const normalized = normalizeSavedFilterValue(filterName, currentFilters[filterName]);
+                currentFilters[filterName] = normalized;
+                if (normalized && normalized !== 'All') {
+                    select.value = normalized;
+                }
+            }
+        });
+    }
 
     // Get filtered data from stateData
     function getFilteredData() {
@@ -116,10 +325,33 @@
             return true;
         });
 
+        let withPeriod = filtered;
+
+        // Period filter projection over state-level period breakdown sourced from All_Courses.Period.
+        if (currentFilters.period && currentFilters.period !== 'All') {
+            const projected = filtered
+                .map(item => {
+                    const breakdown = item.period_breakdown || {};
+                    const periodData = breakdown[currentFilters.period];
+                    if (!periodData) return null;
+                    return {
+                        ...item,
+                        total: Number(periodData.total) || 0,
+                        calc_i: Number(periodData.calc_i) || 0,
+                        calc_ii: Number(periodData.calc_ii) || 0,
+                        courses: Number(periodData.courses) || 0
+                    };
+                })
+                .filter(item => item && item.total > 0);
+
+            // Fallback to full data when period breakdown is not available in the current dataset.
+            withPeriod = projected.length > 0 ? projected : filtered;
+        }
+
         // Course filter projection over aggregated state data.
         // We cannot split institution count by course here, but we can align enrollment metrics.
         if (currentFilters.course === 'Calc I') {
-            return filtered.map(item => ({
+            return withPeriod.map(item => ({
                 ...item,
                 total: item.calc_i || 0,
                 calc_ii: 0
@@ -127,14 +359,14 @@
         }
 
         if (currentFilters.course === 'Calc II') {
-            return filtered.map(item => ({
+            return withPeriod.map(item => ({
                 ...item,
                 total: item.calc_ii || 0,
                 calc_i: 0
             }));
         }
 
-        return filtered;
+        return withPeriod;
     }
 
     // Calculate KPIs from filtered data
@@ -193,17 +425,19 @@
         const baseKpis = getBaseDashboardKpis();
         const useBase = !hasActiveFilters() && baseKpis;
 
-        // Update institutions
+        // Total Institutions is a global KPI and must stay fixed (not filter-dependent).
         const instEl = document.getElementById('kpi-institutions');
         if (instEl) {
-            const value = useBase ? baseKpis.total_institutions : kpis.totalInstitutions;
+            const hasBaseInstitutions = baseKpis && baseKpis.total_institutions !== undefined && baseKpis.total_institutions !== null;
+            const value = hasBaseInstitutions ? baseKpis.total_institutions : kpis.totalInstitutions;
             instEl.textContent = formatNumber(value);
         }
 
-        // Update total enrollment / calculus enrollment
+        // Total Calculus Enrollment is a global KPI and must stay fixed (not filter-dependent).
         const calcEl = document.getElementById('kpi-calculus');
         if (calcEl) {
-            const value = useBase ? baseKpis.total_enrollment : kpis.totalEnrollment;
+            const hasBaseTotal = baseKpis && baseKpis.total_enrollment !== undefined && baseKpis.total_enrollment !== null;
+            const value = hasBaseTotal ? baseKpis.total_enrollment : kpis.totalEnrollment;
             calcEl.textContent = formatNumber(value);
         }
 
@@ -272,6 +506,8 @@
 
     // Initialize filter select elements
     function initializeFilters() {
+        populateDynamicFilterOptions();
+
         const filterGroups = document.querySelectorAll('.filter-group');
 
         filterGroups.forEach(group => {
@@ -329,6 +565,23 @@
                 select.classList.remove('active');
             });
 
+            // Reset period buttons to default period filter.
+            const periodButtons = document.querySelectorAll('.btn-period');
+            let defaultPeriodSet = false;
+            periodButtons.forEach((btn, index) => {
+                const text = (btn.getAttribute('data-period') || btn.textContent || '').toLowerCase();
+                const isDefault = !defaultPeriodSet && (text.includes('fall') || index === 0);
+                if (isDefault) {
+                    btn.classList.add('active');
+                    btn.classList.remove('inactive');
+                    currentFilters.period = (btn.getAttribute('data-period') || 'Fall 2025').trim() || 'Fall 2025';
+                    defaultPeriodSet = true;
+                } else {
+                    btn.classList.remove('active');
+                    btn.classList.add('inactive');
+                }
+            });
+
             applyFilters();
 
             // Add visual feedback for clear action
@@ -342,8 +595,44 @@
     // Initialize period buttons (if present)
     function initializePeriodButtons() {
         const periodButtons = document.querySelectorAll('.btn-period');
+        if (!periodButtons || periodButtons.length === 0) return;
+
+        function getPeriodValueFromButton(btn) {
+            const attr = (btn.getAttribute('data-period') || '').trim();
+            if (attr) return attr;
+
+            const text = (btn.textContent || '').toLowerCase();
+            if (text.includes('fall')) return 'Fall 2025';
+            if (text.includes('spring')) return 'Spring 2025';
+            if (text.includes('winter')) return 'Winter 2025';
+            if (text.includes('summer')) return 'Summer 2025';
+            return '';
+        }
+
+        let hasCurrent = false;
+        periodButtons.forEach(btn => {
+            const periodValue = getPeriodValueFromButton(btn);
+            if (periodValue && periodValue === currentFilters.period) {
+                hasCurrent = true;
+            }
+        });
+        if (!hasCurrent) {
+            const firstPeriod = getPeriodValueFromButton(periodButtons[0]);
+            currentFilters.period = firstPeriod || 'All';
+        }
 
         periodButtons.forEach(btn => {
+            const periodValue = getPeriodValueFromButton(btn);
+            if (!periodValue) return;
+
+            if (periodValue === currentFilters.period) {
+                btn.classList.add('active');
+                btn.classList.remove('inactive');
+            } else {
+                btn.classList.remove('active');
+                btn.classList.add('inactive');
+            }
+
             btn.addEventListener('click', function() {
                 // Remove active from all buttons
                 periodButtons.forEach(b => {
@@ -355,9 +644,12 @@
                 this.classList.remove('inactive');
                 this.classList.add('active');
 
+                currentFilters.period = periodValue;
+                applyFilters();
+
                 // Dispatch event for period change
                 window.dispatchEvent(new CustomEvent('bmgf:periodChanged', {
-                    detail: { period: this.textContent.trim() }
+                    detail: { period: periodValue }
                 }));
             });
         });
@@ -367,6 +659,33 @@
     function initializeInstitutionList() {
         const institutionList = document.querySelector('.institution-list');
         if (!institutionList) return;
+
+        const dashboardFilters = getDashboardFilters();
+        const institutions = uniqueCleanStrings(dashboardFilters.institutions)
+            .filter(name => name.toLowerCase() !== '(blank)')
+            .sort((a, b) => a.localeCompare(b));
+
+        if (institutions.length > 0) {
+            institutionList.innerHTML = '';
+            const allLabel = document.createElement('label');
+            allLabel.className = 'institution-item';
+            const allInput = document.createElement('input');
+            allInput.type = 'checkbox';
+            allInput.checked = true;
+            allLabel.appendChild(allInput);
+            allLabel.appendChild(document.createTextNode(' (All)'));
+            institutionList.appendChild(allLabel);
+
+            institutions.forEach(name => {
+                const label = document.createElement('label');
+                label.className = 'institution-item';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(' ' + name));
+                institutionList.appendChild(label);
+            });
+        }
 
         const allCheckbox = institutionList.querySelector('.institution-item:first-child input[type="checkbox"]');
         const otherCheckboxes = institutionList.querySelectorAll('.institution-item:not(:first-child) input[type="checkbox"]');

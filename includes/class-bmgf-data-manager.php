@@ -307,12 +307,26 @@ class BMGF_Data_Manager {
                 'Southwest', 'Rocky Mountains', 'Plains', 'New England', 'Outlying Areas',
             ],
             'sectors' => [
-                '4-Year Public',
-                '2-Year Public',
-                '4-Year Private',
+                '2, Public',
+                '4, Public',
+                '4, PNFP',
+                '4, PFP',
             ],
             'publishers' => [
                 'Cengage', 'Pearson', 'Wiley', 'OpenStax', 'Macmillan', 'Other',
+            ],
+            'periods' => [
+                'Fall 2025',
+                'Spring 2025',
+                'Winter 2025',
+                'Summer 2025',
+            ],
+            'institutions' => [
+                'Arizona State University Campus Immersion',
+                'Pennsylvania State University-Main Campus',
+                'University of Michigan-Ann Arbor',
+                'Purdue University-Main Campus',
+                'University of Washington-Seattle Campus',
             ],
             'courses' => [
                 'Calculus I',
