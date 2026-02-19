@@ -191,6 +191,22 @@
         const startRadius = 52;
         const barWidth = 14;
         const gap = 6;
+        const emptyFilteredConfig = {
+            labels: ['Calculus I', 'Calculus II'],
+            values: [0, 0],
+            realValues: ['0', '0'],
+            colors: ['#008384', '#4A81A8'],
+            total: '0',
+            totalLabel: 'Calc Enroll'
+        };
+
+        function hasActiveFilters(filters) {
+            if (!filters || typeof filters !== 'object') return false;
+            return Object.keys(filters).some(key => {
+                const value = filters[key];
+                return value !== undefined && value !== null && value !== '' && value !== 'All';
+            });
+        }
 
         function renderChart(config) {
             const sortedData = config.values
@@ -295,12 +311,24 @@
             // Always prefer controller-provided filtered data so every filter
             // (state/sector/region/publisher/course/period/etc.) is reflected.
             if (!Array.isArray(filteredData)) {
+                if (hasActiveFilters(filters)) {
+                    renderChart(emptyFilteredConfig);
+                    return;
+                }
                 renderChart(buildConfigFromKpis());
                 return;
             }
 
             const filteredConfig = buildConfigFromFilteredData(filteredData);
-            renderChart(filteredConfig || buildConfigFromKpis());
+            if (filteredConfig) {
+                renderChart(filteredConfig);
+                return;
+            }
+            if (hasActiveFilters(filters)) {
+                renderChart(emptyFilteredConfig);
+                return;
+            }
+            renderChart(buildConfigFromKpis());
         };
     </script>
     <script src="filter-receiver.js"></script>

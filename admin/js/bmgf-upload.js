@@ -189,7 +189,13 @@
                             deferred.resolve();
                         } else {
                             $zone.addClass('bmgf-upload-error');
-                            deferred.reject(response.data.message || 'Upload failed.');
+                            var errMsg = response.data.message || 'Upload failed.';
+                            if (response.data.debug) {
+                                try {
+                                    errMsg += ' [debug: ' + JSON.stringify(response.data.debug) + ']';
+                                } catch (e) {}
+                            }
+                            deferred.reject(errMsg);
                         }
                     } catch (err) {
                         deferred.reject('Invalid server response.');

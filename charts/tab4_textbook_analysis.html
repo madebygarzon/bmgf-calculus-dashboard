@@ -527,6 +527,20 @@
     <script>
         // Update KPIs from dynamic data if available (fallback if filters don't apply)
         (function() {
+            if (window.BMGF_DATA && window.BMGF_DATA.kpis) {
+                const textbooksEl = document.getElementById('kpi-textbooks');
+                const totalTextbooks = Number(window.BMGF_DATA.kpis.total_textbooks);
+                if (textbooksEl && Number.isFinite(totalTextbooks)) {
+                    textbooksEl.textContent = totalTextbooks.toLocaleString();
+                }
+
+                const avgPriceEl = document.getElementById('kpi-avg-price');
+                const avgTextbookPrice = Number(window.BMGF_DATA.kpis.avg_textbook_price);
+                if (avgPriceEl && Number.isFinite(avgTextbookPrice)) {
+                    avgPriceEl.textContent = '$' + Math.round(avgTextbookPrice).toLocaleString();
+                }
+            }
+
             if (window.BMGF_DATA && window.BMGF_DATA.publishers) {
                 const publishers = window.BMGF_DATA.publishers;
 
@@ -534,16 +548,6 @@
                 const pubEl = document.getElementById('kpi-publishers');
                 if (pubEl) {
                     pubEl.textContent = publishers.length;
-                }
-
-                // Calculate average price (excluding free/OER)
-                const paidPublishers = publishers.filter(p => p.avg_price > 0);
-                if (paidPublishers.length > 0) {
-                    const avgPrice = paidPublishers.reduce((sum, p) => sum + p.avg_price, 0) / paidPublishers.length;
-                    const avgPriceEl = document.getElementById('kpi-avg-price');
-                    if (avgPriceEl) {
-                        avgPriceEl.textContent = '$' + Math.round(avgPrice);
-                    }
                 }
             }
         })();

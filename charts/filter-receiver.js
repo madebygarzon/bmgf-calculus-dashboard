@@ -9,7 +9,7 @@
     // Store current filters
     window.BMGF_CURRENT_FILTERS = {
         course: 'All',
-        period: 'Fall 2025',
+        period: 'All',
         state: 'All',
         sector: 'All',
         region: 'All',

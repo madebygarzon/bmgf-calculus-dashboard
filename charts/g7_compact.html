@@ -133,23 +133,62 @@
             }, 150);
         });
 
-        function renderFromFilteredData(filteredData) {
+        function renderFromFilteredData(filters, filteredData) {
             if (!Array.isArray(filteredData) || filteredData.length === 0) {
                 return false;
             }
 
-            const stateToRegion = window.BMGF_STATE_TO_REGION || {};
             const regionMap = {};
             const regionOrder = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mountains', 'Plains', 'New England', 'Outlying'];
             const regionLabels = ['Southeast', 'Mid East', 'Far West', 'Great Lakes', 'Southwest', 'Rocky Mtns', 'Plains', 'New England', 'Outlying'];
 
             regionOrder.forEach(r => { regionMap[r] = { calc1: 0, calc2: 0 }; });
 
+            const selectedRegion = filters && filters.region && filters.region !== 'All'
+                ? String(filters.region)
+                : '';
+
+            if (selectedRegion) {
+                const calc1Total = filteredData.reduce((sum, d) => sum + (Number(d.calc_i) || 0), 0);
+                const calc2Total = filteredData.reduce((sum, d) => sum + (Number(d.calc_ii) || 0), 0);
+                const regionLabel = selectedRegion === 'Rocky Mountains' ? 'Rocky Mtns' : selectedRegion;
+
+                const k1 = calc1Total > 2000 ? Math.round(calc1Total / 1000) : Math.round(calc1Total);
+                const k2 = calc2Total > 2000 ? Math.round(calc2Total / 1000) : Math.round(calc2Total);
+
+                Plotly.animate('chart', {
+                    data: [
+                        { x: [regionLabel], y: [k1], text: [k1 + 'K'] },
+                        { x: [regionLabel], y: [k2], text: [k2 + 'K'] }
+                    ],
+                    traces: [0, 1]
+                }, {
+                    transition: { duration: 400, easing: 'cubic-out' },
+                    frame: { duration: 400 }
+                });
+
+                Plotly.relayout('chart', {
+                    'yaxis.range': [0, Math.max(k1, 1) * 1.25]
+                });
+
+                return true;
+            }
+
             filteredData.forEach(d => {
-                const region = stateToRegion[d.state];
-                if (region && regionMap[region]) {
-                    regionMap[region].calc1 += d.calc_i || 0;
-                    regionMap[region].calc2 += d.calc_ii || 0;
+                const breakdown = d && d.region_breakdown ? d.region_breakdown : null;
+                if (breakdown && Object.keys(breakdown).length > 0) {
+                    Object.keys(breakdown).forEach(region => {
+                        if (!regionMap[region]) return;
+                        regionMap[region].calc1 += Number((breakdown[region] || {}).calc_i) || 0;
+                        regionMap[region].calc2 += Number((breakdown[region] || {}).calc_ii) || 0;
+                    });
+                    return;
+                }
+
+                const fallbackRegion = d && d.state && window.BMGF_STATE_TO_REGION ? window.BMGF_STATE_TO_REGION[d.state] : '';
+                if (fallbackRegion && regionMap[fallbackRegion]) {
+                    regionMap[fallbackRegion].calc1 += Number(d.calc_i) || 0;
+                    regionMap[fallbackRegion].calc2 += Number(d.calc_ii) || 0;
                 }
             });
 
@@ -157,8 +196,10 @@
             const newCalc1 = [];
             const newCalc2 = [];
             regionOrder.forEach((r, i) => {
-                const c1 = Math.round(regionMap[r].calc1 / 1000);
-                const c2 = Math.round(regionMap[r].calc2 / 1000);
+                const raw1 = regionMap[r].calc1;
+                const raw2 = regionMap[r].calc2;
+                const c1 = raw1 > 2000 ? Math.round(raw1 / 1000) : Math.round(raw1);
+                const c2 = raw2 > 2000 ? Math.round(raw2 / 1000) : Math.round(raw2);
                 if (c1 > 0 || c2 > 0) {
                     newRegions.push(regionLabels[i]);
                     newCalc1.push(c1);
@@ -203,7 +244,7 @@
 
         // Filter update handler
         window.handleFilterUpdate = function(filters, filteredData) {
-            const rendered = renderFromFilteredData(filteredData);
+            const rendered = renderFromFilteredData(filters || {}, filteredData);
             if (!rendered) {
                 renderBaseData();
             }

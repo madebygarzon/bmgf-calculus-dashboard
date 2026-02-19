@@ -3,7 +3,7 @@
  * Plugin Name: BMGF Calculus Market Dashboard
  * Plugin URI: https://partnerinpublishing.com
  * Description: Interactive dashboard for Math Education Market Analysis - Calculus textbook market data visualization.
- * Version: 20.0.0
+ * Version: 30.0.0
  * Author: Team Dev PIP
  * Author URI: https://partnerinpublishing.com
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('BMGF_DASHBOARD_VERSION', '2.1.1');
+define('BMGF_DASHBOARD_VERSION', '2.1.2');
 define('BMGF_DASHBOARD_PATH', plugin_dir_path(__FILE__));
 define('BMGF_DASHBOARD_URL', plugin_dir_url(__FILE__));
 

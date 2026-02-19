@@ -238,17 +238,34 @@ class BMGF_Admin {
             return;
         }
 
+        $parser_build = BMGF_XLSX_Parser::build_id();
+
         // Parse the file
         try {
             $preferred_sheet = $file_type === 'institutions' ? 'All_Institutions' : 'All_Courses';
             $parsed = BMGF_XLSX_Parser::parse($file['tmp_name'], $ext, $preferred_sheet);
         } catch (Exception $e) {
-            wp_send_json_error(['message' => 'Parse error: ' . $e->getMessage()]);
+            wp_send_json_error([
+                'message' => 'Parse error: ' . $e->getMessage(),
+                'debug' => [
+                    'parser_build' => $parser_build,
+                    'file_type' => $file_type,
+                    'ext' => $ext,
+                    'tmp_name' => basename((string)$file['tmp_name']),
+                ],
+            ]);
             return;
         }
 
         if (empty($parsed['rows'])) {
-            wp_send_json_error(['message' => 'File was parsed but contains no data rows.']);
+            wp_send_json_error([
+                'message' => 'File was parsed but contains no data rows.',
+                'debug' => [
+                    'parser_build' => $parser_build,
+                    'headers_count' => is_array($parsed['headers'] ?? null) ? count($parsed['headers']) : 0,
+                    'headers_preview' => array_slice((array)($parsed['headers'] ?? []), 0, 10),
+                ],
+            ]);
             return;
         }
 
@@ -261,6 +278,11 @@ class BMGF_Admin {
         if (!empty($missing)) {
             wp_send_json_error([
                 'message' => 'Missing required columns: ' . implode(', ', $missing) . '. Found columns: ' . implode(', ', $parsed['headers']),
+                'debug' => [
+                    'parser_build' => $parser_build,
+                    'headers_count' => count($parsed['headers']),
+                    'headers_preview' => array_slice($parsed['headers'], 0, 12),
+                ],
             ]);
             return;
         }
@@ -278,6 +300,9 @@ class BMGF_Admin {
             'transient_key' => $temp_path,
             'row_count' => count($parsed['rows']),
             'columns' => $parsed['headers'],
+            'debug' => [
+                'parser_build' => $parser_build,
+            ],
         ]);
     }
 
@@ -378,6 +403,8 @@ class BMGF_Admin {
             }
             if ($has_courses_upload) {
                 foreach ([
+                    'total_textbooks',
+                    'avg_textbook_price',
                     'avg_price_calc1',
                     'avg_price_calc2',
                     'commercial_share',
@@ -484,6 +511,8 @@ class BMGF_Admin {
         $numeric_fields = [
             'total_institutions', 'total_enrollment', 'calc1_enrollment',
             'calc1_share', 'calc2_enrollment', 'calc2_share',
+            'total_textbooks',
+            'avg_textbook_price',
             'total_fte_enrollment',
             'avg_price_calc1', 'avg_price_calc2', 'commercial_share',
             'oer_share', 'digital_share', 'print_share',

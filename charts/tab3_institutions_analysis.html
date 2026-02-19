@@ -133,12 +133,14 @@
             display: flex;
             align-items: flex-end;
             gap: 20px;
+            flex-wrap: nowrap;
         }
 
         .filter-group {
             display: flex;
             flex-direction: column;
             gap: 6px;
+            min-width: 0;
         }
 
         .filter-label {
@@ -149,7 +151,9 @@
 
         .filter-select {
             height: 53px;
-            min-width: 180px;
+            width: 165px;
+            min-width: 165px;
+            max-width: 165px;
             padding: 0 40px 0 20px;
             border: 2px solid transparent;
             border-radius: 97px;
@@ -161,6 +165,9 @@
             cursor: pointer;
             appearance: none;
             transition: border-color 0.2s ease, color 0.2s ease;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
         }
 
         .filter-select:focus {
@@ -189,6 +196,7 @@
             gap: 8px;
             white-space: nowrap;
             margin-left: auto;
+            flex-shrink: 0;
         }
 
         .actions-row {
@@ -515,7 +523,7 @@
                 <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="2"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                 <input type="text" class="search-input" id="institution-search" placeholder="Search institution...">
             </div>
-            <button class="btn-period active" data-period="Fall 2025">Fall-25 Enrollment</button>
+            <button class="btn-period inactive" data-period="Fall 2025">Fall-25 Enrollment</button>
             <button class="btn-period inactive" data-period="Spring 2025">Spring-25 Enrollment</button>
             <button class="btn-period inactive" data-period="Winter 2025">Winter-25 Enrollment</button>
         </div>

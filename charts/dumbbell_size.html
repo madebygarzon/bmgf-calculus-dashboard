@@ -64,7 +64,6 @@
     </div>
 
     <script>
-        // Default data
         const defaultSizeData = [
             { size: "Large (>20K)", calc1: 485, calc2: 240 },
             { size: "Medium (5-20K)", calc1: 412, calc2: 203 },
@@ -72,94 +71,116 @@
             { size: "Very Small (<1K)", calc1: 121, calc2: 62 }
         ];
 
-        // Get data from window.BMGF_DATA if available
-        const sizeData = (window.BMGF_DATA && window.BMGF_DATA.institutionSizes && window.BMGF_DATA.institutionSizes.length > 0)
-            ? window.BMGF_DATA.institutionSizes
-            : defaultSizeData;
+        function toDisplayK(value) {
+            const n = Number(value) || 0;
+            return n > 2000 ? Math.round(n / 1000) : Math.round(n);
+        }
 
-        sizeData.sort((a, b) => a.calc1 - b.calc1);
+        function normalizeSizeRows(rows) {
+            return (rows || [])
+                .map(d => ({
+                    size: d.size,
+                    calc1: toDisplayK(d.calc1),
+                    calc2: toDisplayK(d.calc2)
+                }))
+                .sort((a, b) => a.calc1 - b.calc1);
+        }
 
-        const sizes = sizeData.map(d => d.size);
-        const calc1 = sizeData.map(d => d.calc1);
-        const calc2 = sizeData.map(d => d.calc2);
-
-        const traces = [
-            {
-                type: 'scatter',
-                mode: 'lines',
-                x: sizeData.flatMap(d => [d.calc2, d.calc1, null]),
-                y: sizeData.flatMap(d => [d.size, d.size, null]),
-                line: { color: '#E5E7EB', width: 5 },
-                showlegend: false,
-                hoverinfo: 'skip'
-            },
-            {
-                type: 'scatter',
-                mode: 'markers+text',
-                x: calc2,
-                y: sizes,
-                text: calc2.map(v => v + 'K'),
-                textposition: 'bottom center',
-                textfont: { family: 'Inter Tight', size: 8, color: '#4A81A8' },
-                marker: { size: 12, color: '#4A81A8', line: { color: '#FFF', width: 2 } },
-                hovertemplate: '<b>%{y}</b><br>Calc II: %{x}K<extra></extra>',
-                showlegend: false
-            },
-            {
-                type: 'scatter',
-                mode: 'markers+text',
-                x: calc1,
-                y: sizes,
-                text: calc1.map(v => v + 'K'),
-                textposition: 'top center',
-                textfont: { family: 'Inter Tight', size: 8, color: '#008384' },
-                marker: { size: 12, color: '#008384', line: { color: '#FFF', width: 2 } },
-                hovertemplate: '<b>%{y}</b><br>Calc I: %{x}K<extra></extra>',
-                showlegend: false
+        function buildRowsFromFiltered(filteredData) {
+            if (!Array.isArray(filteredData) || filteredData.length === 0) {
+                return [];
             }
-        ];
-
-        const layout = {
-            margin: { l: 100, r: 20, t: 5, b: 30 },
-            xaxis: {
-                showgrid: true,
-                gridcolor: '#F0F2F5',
-                zeroline: false,
-                tickfont: { family: 'Inter Tight', size: 9, color: '#9CA3AF' },
-                range: [0, Math.max(...calc1) * 1.15]
-            },
-            yaxis: {
-                showgrid: false,
-                tickfont: { family: 'Inter Tight', size: 10, color: '#234A5D' }
-            },
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            hovermode: 'closest'
-        };
-
-        const config = { displayModeBar: false, responsive: true };
-
-        const initTraces = [
-            { ...traces[0], x: sizeData.flatMap(() => [0, 0, null]) },
-            { ...traces[1], x: calc2.map(() => 0), text: [], marker: { ...traces[1].marker, size: 0 } },
-            { ...traces[2], x: calc1.map(() => 0), text: [], marker: { ...traces[2].marker, size: 0 } }
-        ];
-
-        Plotly.newPlot('chart', initTraces, layout, config).then(() => {
-            setTimeout(() => {
-                Plotly.animate('chart', {
-                    data: [
-                        { x: sizeData.flatMap(d => [d.calc2, d.calc1, null]) },
-                        { x: calc2, text: calc2.map(v => v + 'K'), marker: { size: 12 } },
-                        { x: calc1, text: calc1.map(v => v + 'K'), marker: { size: 12 } }
-                    ],
-                    traces: [0, 1, 2]
-                }, {
-                    transition: { duration: 400, easing: 'cubic-out' },
-                    frame: { duration: 400 }
+            const sizeMap = {};
+            filteredData.forEach(d => {
+                const breakdown = d && d.size_breakdown ? d.size_breakdown : {};
+                Object.keys(breakdown).forEach(size => {
+                    if (!sizeMap[size]) sizeMap[size] = { calc1: 0, calc2: 0 };
+                    sizeMap[size].calc1 += Number((breakdown[size] || {}).calc_i) || 0;
+                    sizeMap[size].calc2 += Number((breakdown[size] || {}).calc_ii) || 0;
                 });
-            }, 100);
-        });
+            });
+            return normalizeSizeRows(
+                Object.entries(sizeMap).map(([size, vals]) => ({ size, calc1: vals.calc1, calc2: vals.calc2 }))
+            );
+        }
+
+        function render(sizeRows) {
+            const rows = normalizeSizeRows(sizeRows.length > 0 ? sizeRows : defaultSizeData);
+            const sizes = rows.map(d => d.size);
+            const calc1 = rows.map(d => d.calc1);
+            const calc2 = rows.map(d => d.calc2);
+
+            const traces = [
+                {
+                    type: 'scatter',
+                    mode: 'lines',
+                    x: rows.flatMap(d => [d.calc2, d.calc1, null]),
+                    y: rows.flatMap(d => [d.size, d.size, null]),
+                    line: { color: '#E5E7EB', width: 5 },
+                    showlegend: false,
+                    hoverinfo: 'skip'
+                },
+                {
+                    type: 'scatter',
+                    mode: 'markers+text',
+                    x: calc2,
+                    y: sizes,
+                    text: calc2.map(v => v + 'K'),
+                    textposition: 'bottom center',
+                    textfont: { family: 'Inter Tight', size: 8, color: '#4A81A8' },
+                    marker: { size: 12, color: '#4A81A8', line: { color: '#FFF', width: 2 } },
+                    hovertemplate: '<b>%{y}</b><br>Calc II: %{x}K<extra></extra>',
+                    showlegend: false
+                },
+                {
+                    type: 'scatter',
+                    mode: 'markers+text',
+                    x: calc1,
+                    y: sizes,
+                    text: calc1.map(v => v + 'K'),
+                    textposition: 'top center',
+                    textfont: { family: 'Inter Tight', size: 8, color: '#008384' },
+                    marker: { size: 12, color: '#008384', line: { color: '#FFF', width: 2 } },
+                    hovertemplate: '<b>%{y}</b><br>Calc I: %{x}K<extra></extra>',
+                    showlegend: false
+                }
+            ];
+
+            const layout = {
+                margin: { l: 100, r: 20, t: 5, b: 30 },
+                xaxis: {
+                    showgrid: true,
+                    gridcolor: '#F0F2F5',
+                    zeroline: false,
+                    tickfont: { family: 'Inter Tight', size: 9, color: '#9CA3AF' },
+                    range: [0, Math.max(...calc1, 1) * 1.15]
+                },
+                yaxis: {
+                    showgrid: false,
+                    tickfont: { family: 'Inter Tight', size: 10, color: '#234A5D' }
+                },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                hovermode: 'closest'
+            };
+
+            const config = { displayModeBar: false, responsive: true };
+            Plotly.react('chart', traces, layout, config);
+        }
+
+        const baseRows = (window.BMGF_DATA && window.BMGF_DATA.institutionSizes && window.BMGF_DATA.institutionSizes.length > 0)
+            ? window.BMGF_DATA.institutionSizes.map(d => ({ size: d.size, calc1: d.calc1, calc2: d.calc2 }))
+            : defaultSizeData;
+        render(baseRows);
+
+        window.handleFilterUpdate = function(filters, filteredData) {
+            const rows = buildRowsFromFiltered(filteredData || []);
+            if (rows.length > 0) {
+                render(rows);
+            } else {
+                render(baseRows);
+            }
+        };
     </script>
     <script src="filter-receiver.js"></script>
 </body>

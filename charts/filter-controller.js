@@ -12,7 +12,7 @@
     // Default filter state
     const defaultFilters = {
         course: 'All',
-        period: 'Fall 2025',
+        period: 'All',
         state: 'All',
         sector: 'All',
         region: 'All',
@@ -45,6 +45,9 @@
 
     // Current filter state
     let currentFilters = loadFilters();
+    const fixedGlobalTotals = {
+        fte: null
+    };
 
     function hasActiveFilters() {
         return Object.values(currentFilters).some(value => value !== 'All');
@@ -55,6 +58,38 @@
             return null;
         }
         return window.BMGF_DATA.kpis;
+    }
+
+    function parseDisplayedNumber(value) {
+        if (value === undefined || value === null) return 0;
+        const cleaned = String(value).replace(/[^0-9.-]/g, '');
+        if (cleaned === '') return 0;
+        const parsed = Number(cleaned);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function getFixedFteTotal() {
+        if (fixedGlobalTotals.fte !== null) {
+            return fixedGlobalTotals.fte;
+        }
+
+        const stateSource = (typeof stateData !== 'undefined' && Array.isArray(stateData))
+            ? stateData
+            : (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.state_data) ? window.BMGF_DATA.state_data : []);
+        if (stateSource.length > 0) {
+            fixedGlobalTotals.fte = stateSource.reduce((sum, item) => sum + (Number(item.fte) || 0), 0);
+            return fixedGlobalTotals.fte;
+        }
+
+        const baseKpis = getBaseDashboardKpis();
+        if (baseKpis && baseKpis.total_fte_enrollment !== undefined && baseKpis.total_fte_enrollment !== null) {
+            fixedGlobalTotals.fte = Number(baseKpis.total_fte_enrollment) || 0;
+            return fixedGlobalTotals.fte;
+        }
+
+        const fteEl = document.getElementById('kpi-fte');
+        fixedGlobalTotals.fte = fteEl ? parseDisplayedNumber(fteEl.textContent) : 0;
+        return fixedGlobalTotals.fte;
     }
 
     // Complete state/jurisdiction dictionary used by the "State" filter.
@@ -175,8 +210,6 @@
         const raw = String(value || '').trim();
         if (!raw) return '';
         const base = raw.replace(/\s*\(.*\)\s*$/, '');
-        const lower = base.toLowerCase();
-        if (lower.includes('other u.s.') || lower.includes('outlying')) return 'Outlying';
         return base;
     }
 
@@ -220,6 +253,12 @@
             return uniqueCleanStrings(dashboardFilters.publishers)
                 .sort((a, b) => a.localeCompare(b))
                 .map(publisher => ({ value: publisher, label: publisher }));
+        }
+
+        if (filterName === 'msiType') {
+            return uniqueCleanStrings(dashboardFilters.msi_types || dashboardFilters.msiTypes)
+                .sort((a, b) => a.localeCompare(b))
+                .map(msi => ({ value: msi, label: msi }));
         }
 
         return [];
@@ -286,6 +325,35 @@
         });
     }
 
+    function getInstitutionSelection() {
+        const institutionList = document.querySelector('.institution-list');
+        if (!institutionList) {
+            return { hasList: false, allSelected: true, selected: [] };
+        }
+
+        const allCheckbox = institutionList.querySelector('.institution-item:first-child input[type="checkbox"]');
+        const labels = institutionList.querySelectorAll('.institution-item:not(:first-child)');
+        const selected = [];
+
+        labels.forEach(label => {
+            const input = label.querySelector('input[type="checkbox"]');
+            if (!input) return;
+            if (input.checked) {
+                const name = (label.textContent || '').trim();
+                if (name) selected.push(name);
+            }
+        });
+
+        const totalItems = labels.length;
+        const allSelected = allCheckbox ? allCheckbox.checked : (totalItems > 0 && selected.length === totalItems);
+
+        return {
+            hasList: true,
+            allSelected: allSelected || (totalItems > 0 && selected.length === totalItems),
+            selected
+        };
+    }
+
     // Get filtered data from stateData
     function getFilteredData() {
         const sourceData = (typeof stateData !== 'undefined' && Array.isArray(stateData))
@@ -303,33 +371,142 @@
                 return false;
             }
 
-            // Filter by region
-            if (currentFilters.region !== 'All') {
-                const itemRegion = stateToRegion[item.state] || '';
-                if (!itemRegion.toLowerCase().includes(currentFilters.region.toLowerCase())) {
-                    return false;
-                }
-            }
-
-            // Filter by publisher (check if any of the top 3 publishers match)
-            if (currentFilters.publisher !== 'All') {
-                const pubLower = currentFilters.publisher.toLowerCase();
-                const hasPub = (item.pub1 && item.pub1.toLowerCase().includes(pubLower)) ||
-                               (item.pub2 && item.pub2.toLowerCase().includes(pubLower)) ||
-                               (item.pub3 && item.pub3.toLowerCase().includes(pubLower));
-                if (!hasPub) {
-                    return false;
-                }
-            }
-
             return true;
         });
 
         let withPeriod = filtered;
 
+        // Institution checklist projection over state-level institution breakdown sourced from All_Institutions.School.
+        const institutionSelection = getInstitutionSelection();
+        if (institutionSelection.hasList && !institutionSelection.allSelected) {
+            if (institutionSelection.selected.length === 0) {
+                return [];
+            }
+
+            const selectedNames = new Set(institutionSelection.selected);
+            withPeriod = withPeriod
+                .map(item => {
+                    const breakdown = item.institution_breakdown || {};
+                    let calc_i = 0;
+                    let calc_ii = 0;
+                    let total = 0;
+                    let fte = 0;
+                    let institutions = 0;
+
+                    Object.keys(breakdown).forEach(name => {
+                        if (!selectedNames.has(name)) return;
+                        const row = breakdown[name] || {};
+                        calc_i += Number(row.calc_i) || 0;
+                        calc_ii += Number(row.calc_ii) || 0;
+                        total += Number(row.total) || 0;
+                        fte += Number(row.fte) || 0;
+                        institutions += 1;
+                    });
+
+                    if (institutions === 0) return null;
+                    return {
+                        ...item,
+                        calc_i,
+                        calc_ii,
+                        total,
+                        fte,
+                        institutions
+                    };
+                })
+                .filter(Boolean);
+        }
+
+        // Region filter projection over state-level region breakdown sourced from All_Institutions.Region.
+        if (currentFilters.region && currentFilters.region !== 'All') {
+            const projectedByRegion = withPeriod
+                .map(item => {
+                    const breakdown = item.region_breakdown || {};
+                    const regionData = breakdown[currentFilters.region];
+                    if (!regionData) return null;
+                    return {
+                        ...item,
+                        total: Number(regionData.total) || 0,
+                        calc_i: Number(regionData.calc_i) || 0,
+                        calc_ii: Number(regionData.calc_ii) || 0,
+                        fte: Number(regionData.fte) || 0,
+                        institutions: Number(regionData.institutions) || 0
+                    };
+                })
+                .filter(item => item && item.total > 0);
+
+            // Fallback to full data when region breakdown is not available in the current dataset.
+            withPeriod = projectedByRegion.length > 0 ? projectedByRegion : withPeriod;
+        }
+
+        // Publisher filter projection over state-level publisher breakdown sourced from All_Institutions.Publisher.
+        if (currentFilters.publisher && currentFilters.publisher !== 'All') {
+            const projectedByPublisher = withPeriod
+                .map(item => {
+                    const breakdown = item.publisher_breakdown || {};
+                    const publisherData = breakdown[currentFilters.publisher];
+                    if (!publisherData) return null;
+                    return {
+                        ...item,
+                        total: Number(publisherData.total) || 0,
+                        calc_i: Number(publisherData.calc_i) || 0,
+                        calc_ii: Number(publisherData.calc_ii) || 0,
+                        fte: Number(publisherData.fte) || 0,
+                        institutions: Number(publisherData.institutions) || 0
+                    };
+                })
+                .filter(item => item && item.total > 0);
+
+            // Fallback to full data when publisher breakdown is not available in the current dataset.
+            withPeriod = projectedByPublisher.length > 0 ? projectedByPublisher : withPeriod;
+        }
+
+        // Sector filter projection over state-level sector breakdown sourced from All_Institutions.Sector.
+        if (currentFilters.sector && currentFilters.sector !== 'All') {
+            const projectedBySector = withPeriod
+                .map(item => {
+                    const breakdown = item.sector_breakdown || {};
+                    const sectorData = breakdown[currentFilters.sector];
+                    if (!sectorData) return null;
+                    return {
+                        ...item,
+                        total: Number(sectorData.total) || 0,
+                        calc_i: Number(sectorData.calc_i) || 0,
+                        calc_ii: Number(sectorData.calc_ii) || 0,
+                        fte: Number(sectorData.fte) || 0,
+                        institutions: Number(sectorData.institutions) || 0
+                    };
+                })
+                .filter(item => item && item.total > 0);
+
+            // Fallback to full data when sector breakdown is not available in the current dataset.
+            withPeriod = projectedBySector.length > 0 ? projectedBySector : withPeriod;
+        }
+
+        // MSI Type filter projection over state-level MSI breakdown sourced from All_Institutions.MSI Type.
+        if (currentFilters.msiType && currentFilters.msiType !== 'All') {
+            const projectedByMsi = withPeriod
+                .map(item => {
+                    const breakdown = item.msi_breakdown || {};
+                    const msiData = breakdown[currentFilters.msiType];
+                    if (!msiData) return null;
+                    return {
+                        ...item,
+                        total: Number(msiData.total) || 0,
+                        calc_i: Number(msiData.calc_i) || 0,
+                        calc_ii: Number(msiData.calc_ii) || 0,
+                        fte: Number(msiData.fte) || 0,
+                        institutions: Number(msiData.institutions) || 0
+                    };
+                })
+                .filter(item => item && item.total > 0);
+
+            // Fallback to full data when MSI breakdown is not available in the current dataset.
+            withPeriod = projectedByMsi.length > 0 ? projectedByMsi : withPeriod;
+        }
+
         // Period filter projection over state-level period breakdown sourced from All_Courses.Period.
         if (currentFilters.period && currentFilters.period !== 'All') {
-            const projected = filtered
+            const projected = withPeriod
                 .map(item => {
                     const breakdown = item.period_breakdown || {};
                     const periodData = breakdown[currentFilters.period];
@@ -344,8 +521,8 @@
                 })
                 .filter(item => item && item.total > 0);
 
-            // Fallback to full data when period breakdown is not available in the current dataset.
-            withPeriod = projected.length > 0 ? projected : filtered;
+            // Fallback to current composed data when period breakdown is not available.
+            withPeriod = projected.length > 0 ? projected : withPeriod;
         }
 
         // Course filter projection over aggregated state data.
@@ -420,6 +597,83 @@
         return Number(num || 0).toLocaleString();
     }
 
+    function getStateNameToCodeMap() {
+        const map = {};
+        const rows = (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.state_data))
+            ? window.BMGF_DATA.state_data
+            : [];
+
+        rows.forEach(item => {
+            if (!item || !item.state || !item.code) return;
+            map[item.state] = String(item.code).toUpperCase();
+        });
+        return map;
+    }
+
+    function calculateRegionsCovered(filteredData) {
+        const regionCoverage = (window.BMGF_DATA && Array.isArray(window.BMGF_DATA.regionCoverage))
+            ? window.BMGF_DATA.regionCoverage
+            : [];
+
+        if (!Array.isArray(regionCoverage) || regionCoverage.length === 0) {
+            const uniqueRegions = new Set((filteredData || []).map(item => stateToRegion[item.state]).filter(Boolean));
+            return uniqueRegions.size;
+        }
+
+        const stateNameToCode = getStateNameToCodeMap();
+        const selectedStateCodes = new Set();
+        const rows = Array.isArray(filteredData) ? filteredData : [];
+
+        rows.forEach(item => {
+            if (!item) return;
+            const total = Number(item.total || 0);
+            if (total <= 0) return;
+
+            const code = item.code
+                ? String(item.code).toUpperCase()
+                : (item.state && stateNameToCode[item.state] ? stateNameToCode[item.state] : '');
+
+            if (code) {
+                selectedStateCodes.add(code);
+            }
+        });
+
+        if (selectedStateCodes.size === 0) {
+            return 0;
+        }
+
+        let covered = 0;
+        regionCoverage.forEach(region => {
+            const codes = Array.isArray(region && region.states) ? region.states : [];
+            const isCovered = codes.some(code => selectedStateCodes.has(String(code).toUpperCase()));
+            if (isCovered) {
+                covered += 1;
+            }
+        });
+
+        return covered;
+    }
+
+    function enforceInstitutionAllVisualState() {
+        const institutionList = document.querySelector('.institution-list');
+        if (!institutionList) return;
+
+        const allCheckbox = institutionList.querySelector('.institution-item:first-child input[type="checkbox"]');
+        const otherCheckboxes = institutionList.querySelectorAll('.institution-item:not(:first-child) input[type="checkbox"]');
+        if (!allCheckbox || otherCheckboxes.length === 0) return;
+
+        if (allCheckbox.checked) {
+            otherCheckboxes.forEach(cb => {
+                cb.checked = true;
+            });
+        } else {
+            const allChecked = Array.from(otherCheckboxes).every(cb => cb.checked);
+            if (allChecked) {
+                allCheckbox.checked = true;
+            }
+        }
+    }
+
     // Update KPI display elements
     function updateKPIDisplay(kpis) {
         const baseKpis = getBaseDashboardKpis();
@@ -441,10 +695,10 @@
             calcEl.textContent = formatNumber(value);
         }
 
-        // Update FTE
+        // Total FTE Enrollment is a global KPI and must stay fixed (not filter-dependent).
         const fteEl = document.getElementById('kpi-fte');
         if (fteEl) {
-            const value = useBase ? baseKpis.total_fte_enrollment : kpis.totalFTE;
+            const value = getFixedFteTotal();
             fteEl.textContent = formatNumber(value);
         }
 
@@ -452,8 +706,7 @@
         const regionsEl = document.getElementById('kpi-regions');
         if (regionsEl) {
             const filteredData = getFilteredData();
-            const uniqueRegions = new Set(filteredData.map(item => stateToRegion[item.state]).filter(Boolean));
-            regionsEl.textContent = uniqueRegions.size;
+            regionsEl.textContent = calculateRegionsCovered(filteredData);
         }
     }
 
@@ -476,6 +729,8 @@
 
     // Apply filters and update UI
     function applyFilters() {
+        enforceInstitutionAllVisualState();
+
         const filteredData = getFilteredData();
         const kpis = calculateKPIs(filteredData);
 
@@ -565,21 +820,23 @@
                 select.classList.remove('active');
             });
 
-            // Reset period buttons to default period filter.
-            const periodButtons = document.querySelectorAll('.btn-period');
-            let defaultPeriodSet = false;
-            periodButtons.forEach((btn, index) => {
-                const text = (btn.getAttribute('data-period') || btn.textContent || '').toLowerCase();
-                const isDefault = !defaultPeriodSet && (text.includes('fall') || index === 0);
-                if (isDefault) {
-                    btn.classList.add('active');
-                    btn.classList.remove('inactive');
-                    currentFilters.period = (btn.getAttribute('data-period') || 'Fall 2025').trim() || 'Fall 2025';
-                    defaultPeriodSet = true;
-                } else {
-                    btn.classList.remove('active');
-                    btn.classList.add('inactive');
+            // Reset institution checklist to "(All)" selected.
+            const institutionList = document.querySelector('.institution-list');
+            if (institutionList) {
+                const allCheckbox = institutionList.querySelector('.institution-item:first-child input[type="checkbox"]');
+                const otherCheckboxes = institutionList.querySelectorAll('.institution-item:not(:first-child) input[type="checkbox"]');
+                otherCheckboxes.forEach(cb => { cb.checked = true; });
+                if (allCheckbox) {
+                    allCheckbox.checked = true;
                 }
+            }
+
+            // Reset period buttons: none selected by default.
+            const periodButtons = document.querySelectorAll('.btn-period');
+            currentFilters.period = 'All';
+            periodButtons.forEach((btn) => {
+                btn.classList.remove('active');
+                btn.classList.add('inactive');
             });
 
             applyFilters();
@@ -609,18 +866,6 @@
             return '';
         }
 
-        let hasCurrent = false;
-        periodButtons.forEach(btn => {
-            const periodValue = getPeriodValueFromButton(btn);
-            if (periodValue && periodValue === currentFilters.period) {
-                hasCurrent = true;
-            }
-        });
-        if (!hasCurrent) {
-            const firstPeriod = getPeriodValueFromButton(periodButtons[0]);
-            currentFilters.period = firstPeriod || 'All';
-        }
-
         periodButtons.forEach(btn => {
             const periodValue = getPeriodValueFromButton(btn);
             if (!periodValue) return;
@@ -634,22 +879,29 @@
             }
 
             btn.addEventListener('click', function() {
+                const wasActive = this.classList.contains('active');
+
                 // Remove active from all buttons
                 periodButtons.forEach(b => {
                     b.classList.remove('active');
                     b.classList.add('inactive');
                 });
 
-                // Add active to clicked button
-                this.classList.remove('inactive');
-                this.classList.add('active');
+                if (wasActive) {
+                    // Toggle off when clicking an already-active period button.
+                    currentFilters.period = 'All';
+                } else {
+                    // Add active to clicked button
+                    this.classList.remove('inactive');
+                    this.classList.add('active');
+                    currentFilters.period = periodValue;
+                }
 
-                currentFilters.period = periodValue;
                 applyFilters();
 
                 // Dispatch event for period change
                 window.dispatchEvent(new CustomEvent('bmgf:periodChanged', {
-                    detail: { period: periodValue }
+                    detail: { period: currentFilters.period }
                 }));
             });
         });
@@ -690,11 +942,34 @@
         const allCheckbox = institutionList.querySelector('.institution-item:first-child input[type="checkbox"]');
         const otherCheckboxes = institutionList.querySelectorAll('.institution-item:not(:first-child) input[type="checkbox"]');
 
+        function setAllInstitutionsSelected(selected) {
+            otherCheckboxes.forEach(cb => {
+                cb.checked = selected;
+            });
+            if (allCheckbox) {
+                allCheckbox.checked = selected;
+            }
+        }
+
+        function syncAllCheckboxFromIndividuals() {
+            if (!allCheckbox) return;
+            const allChecked = Array.from(otherCheckboxes).every(c => c.checked);
+            allCheckbox.checked = allChecked;
+        }
+
+        // Default behavior: "(All)" means every institution is selected.
+        if (allCheckbox) {
+            setAllInstitutionsSelected(true);
+        }
+
         if (allCheckbox) {
             allCheckbox.addEventListener('change', function() {
                 if (this.checked) {
-                    // Uncheck all others when "All" is checked
-                    otherCheckboxes.forEach(cb => cb.checked = false);
+                    // Select all institutions when "(All)" is checked.
+                    setAllInstitutionsSelected(true);
+                } else {
+                    // If user unchecks "(All)", clear all institution selections.
+                    setAllInstitutionsSelected(false);
                 }
                 applyFilters();
             });
@@ -702,17 +977,7 @@
 
         otherCheckboxes.forEach(cb => {
             cb.addEventListener('change', function() {
-                if (this.checked && allCheckbox) {
-                    // Uncheck "All" when individual is checked
-                    allCheckbox.checked = false;
-                }
-
-                // If no individual is checked, check "All"
-                const anyChecked = Array.from(otherCheckboxes).some(c => c.checked);
-                if (!anyChecked && allCheckbox) {
-                    allCheckbox.checked = true;
-                }
-
+                syncAllCheckboxFromIndividuals();
                 applyFilters();
             });
         });
@@ -803,6 +1068,7 @@
         initializePeriodButtons();
         initializeInstitutionList();
         initializeSearchInput();
+        enforceInstitutionAllVisualState();
 
         // Apply initial filters
         applyFilters();

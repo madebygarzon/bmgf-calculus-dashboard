@@ -159,9 +159,37 @@
             }, 100);
         });
 
+        function hasActiveFilters(filters) {
+            if (!filters || typeof filters !== 'object') return false;
+            return Object.keys(filters).some(key => String(filters[key] || 'All') !== 'All');
+        }
+
+        function renderEmptyState() {
+            Plotly.animate('chart', {
+                data: [
+                    { x: [], y: [] },
+                    { x: [], y: [], text: [] },
+                    { x: [], y: [], text: [] }
+                ],
+                traces: [0, 1, 2]
+            }, {
+                transition: { duration: 300, easing: 'cubic-out' },
+                frame: { duration: 300 }
+            });
+
+            Plotly.relayout('chart', {
+                'xaxis.range': [0, 1]
+            });
+        }
+
         // Filter update handler
         window.handleFilterUpdate = function(filters, filteredData) {
-            if (!filteredData || filteredData.length === 0) return;
+            if (!filteredData || filteredData.length === 0) {
+                if (hasActiveFilters(filters)) {
+                    renderEmptyState();
+                }
+                return;
+            }
 
             const topStates = [...filteredData]
                 .sort((a, b) => b.total - a.total)

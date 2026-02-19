@@ -94,6 +94,7 @@ class BMGF_Data_Manager {
             'top_textbooks' => $this->get_default_top_textbooks(),
             'period_data' => $this->get_default_period_data(),
             'institution_size_data' => $this->get_default_institution_size_data(),
+            'region_coverage' => $this->get_default_region_coverage(),
             'filters' => $this->get_default_filters(),
             // Used by state-level visuals and filter aggregation (map, state comparisons, etc.).
             'state_data' => $this->get_default_state_data(),
@@ -101,7 +102,7 @@ class BMGF_Data_Manager {
     }
 
     /**
-     * Default KPIs (12 main metrics)
+     * Default KPIs
      */
     private function get_default_kpis(): array {
         return [
@@ -111,6 +112,8 @@ class BMGF_Data_Manager {
             'calc1_share' => 66.2,
             'calc2_enrollment' => 614939,
             'calc2_share' => 33.8,
+            'total_textbooks' => 824,
+            'avg_textbook_price' => 143,
             'total_fte_enrollment' => 10703763,
             'avg_price_calc1' => 125.50,
             'avg_price_calc2' => 118.75,
@@ -286,6 +289,23 @@ class BMGF_Data_Manager {
     }
 
     /**
+     * Default "Enrollments by Region" matrix (Summary A12:B20 equivalent structure).
+     */
+    private function get_default_region_coverage(): array {
+        return [
+            ['name' => 'Southeast', 'label' => 'Southeast (AL, AR, FL, GA, KY, LA, MS, NC, SC, TN, VA, WV)', 'states' => ['AL','AR','FL','GA','KY','LA','MS','NC','SC','TN','VA','WV'], 'enrollment' => 325348],
+            ['name' => 'Far West', 'label' => 'Far West (AK, CA, HI, NV, OR, WA)', 'states' => ['AK','CA','HI','NV','OR','WA'], 'enrollment' => 265312],
+            ['name' => 'Mid East', 'label' => 'Mid East (DE, DC, MD, NJ, NY, PA)', 'states' => ['DE','DC','MD','NJ','NY','PA'], 'enrollment' => 202959],
+            ['name' => 'Southwest', 'label' => 'Southwest (AZ, NM, OK, TX)', 'states' => ['AZ','NM','OK','TX'], 'enrollment' => 174852],
+            ['name' => 'Great Lakes', 'label' => 'Great Lakes (IL, IN, MI, OH, WI)', 'states' => ['IL','IN','MI','OH','WI'], 'enrollment' => 169795],
+            ['name' => 'Plains', 'label' => 'Plains (IA, KS, MN, MO, NE, ND, SD)', 'states' => ['IA','KS','MN','MO','NE','ND','SD'], 'enrollment' => 78306],
+            ['name' => 'Rocky Mountains', 'label' => 'Rocky Mountains (CO, ID, MT, UT, WY)', 'states' => ['CO','ID','MT','UT','WY'], 'enrollment' => 70171],
+            ['name' => 'New England', 'label' => 'New England (CT, ME, MA, NH, RI, VT)', 'states' => ['CT','ME','MA','NH','RI','VT'], 'enrollment' => 60348],
+            ['name' => 'Other U.S. jurisdictions', 'label' => 'Other U.S. jurisdictions (AS, FM, GU, MH, MP, PR, PW, VI)', 'states' => ['AS','FM','GU','MH','MP','PR','PW','VI'], 'enrollment' => 8084],
+        ];
+    }
+
+    /**
      * Default filter options
      */
     private function get_default_filters(): array {
@@ -311,6 +331,15 @@ class BMGF_Data_Manager {
                 '4, Public',
                 '4, PNFP',
                 '4, PFP',
+            ],
+            'msi_types' => [
+                'Not MSI',
+                'HBCU',
+                'HSI',
+                'AANAPISI',
+                'ANNH',
+                'PBI',
+                'TCU',
             ],
             'publishers' => [
                 'Cengage', 'Pearson', 'Wiley', 'OpenStax', 'Macmillan', 'Other',
@@ -359,6 +388,7 @@ class BMGF_Data_Manager {
             'topTextbooks' => $data['top_textbooks'],
             'periods' => $data['period_data'],
             'institutionSizes' => $data['institution_size_data'],
+            'regionCoverage' => $data['region_coverage'] ?? [],
             'filters' => $data['filters'],
             'state_data' => $data['state_data'] ?? [],
         ];

@@ -100,6 +100,7 @@ class BMGF_Data_Mapper {
         $result = [];
         $result['kpis'] = self::compute_kpis($inst_rows, $course_rows);
         $result['regional_data'] = self::compute_regional($course_rows);
+        $result['region_coverage'] = self::compute_region_coverage($inst_rows);
         $result['sector_data'] = self::compute_sectors($inst_rows);
         $result['publishers'] = self::compute_publishers($course_rows);
         $result['top_institutions'] = self::compute_top_institutions($inst_rows);
@@ -133,6 +134,10 @@ class BMGF_Data_Mapper {
 
         if (!empty($computed['regional_data']['calc1'])) {
             $preview['regional_data'] = count($computed['regional_data']['calc1']) . ' regions';
+        }
+
+        if (!empty($computed['region_coverage'])) {
+            $preview['region_coverage'] = count($computed['region_coverage']) . ' coverage regions';
         }
 
         if (!empty($computed['sector_data']['calc1'])) {
@@ -196,6 +201,8 @@ class BMGF_Data_Mapper {
         $total_calc1 = 0;
         $total_calc2 = 0;
         $total_fte = 0;
+        $total_textbooks = 0;
+        $all_textbook_prices = [];
         $unique_institutions = [];
         $unique_states = [];
         $prices_calc1 = [];
@@ -232,7 +239,15 @@ class BMGF_Data_Mapper {
             $price = self::parse_price($row['Textbook_Price'] ?? '');
             $calc_level = strtoupper(trim($row['Calc Level'] ?? ''));
             $publisher = trim($row['Publisher_Normalized'] ?? '');
+            $book_title = (string)($row['Book Title'] ?? ($row['Book Title Normalized'] ?? ''));
             $total_course_enrollment += $enrollment;
+            $total_textbooks += self::count_textbooks_from_cell($book_title);
+
+            $raw_price = (string)($row['Textbook_Price'] ?? '');
+            $parsed_price = self::parse_price_nullable($raw_price);
+            if ($parsed_price !== null) {
+                $all_textbook_prices[] = $parsed_price;
+            }
 
             if ($price > 0) {
                 if (strpos($calc_level, 'I') !== false && strpos($calc_level, 'II') === false) {
@@ -257,6 +272,7 @@ class BMGF_Data_Mapper {
 
         $avg_price_calc1 = !empty($prices_calc1) ? round(array_sum($prices_calc1) / count($prices_calc1), 2) : 0;
         $avg_price_calc2 = !empty($prices_calc2) ? round(array_sum($prices_calc2) / count($prices_calc2), 2) : 0;
+        $avg_textbook_price = !empty($all_textbook_prices) ? round(array_sum($all_textbook_prices) / count($all_textbook_prices), 2) : 0;
 
         $commercial_share = $total_course_enrollment > 0 ? round($commercial_enrollment / $total_course_enrollment * 100) : 0;
         $oer_share = $total_course_enrollment > 0 ? round($oer_enrollment / $total_course_enrollment * 100) : 0;
@@ -268,6 +284,8 @@ class BMGF_Data_Mapper {
             'calc1_share' => $calc1_share,
             'calc2_enrollment' => $total_calc2,
             'calc2_share' => $calc2_share,
+            'total_textbooks' => $total_textbooks,
+            'avg_textbook_price' => $avg_textbook_price,
             // Sum of institutional FTE across the institution dataset.
             'total_fte_enrollment' => $total_fte,
             'avg_price_calc1' => $avg_price_calc1,
@@ -277,6 +295,55 @@ class BMGF_Data_Mapper {
             'digital_share' => 85,
             'print_share' => 15,
         ];
+    }
+
+    /**
+     * Count textbooks in Book Title cell.
+     * Rules:
+     * - Empty/placeholder values (e.g. "Unavailable", "*No Book Details*") count as 0
+     * - Valid title counts as 1
+     * - Multi-title cells separated by ";" "|" or line breaks count each valid title
+     */
+    private static function count_textbooks_from_cell(string $raw): int {
+        $value = trim($raw);
+        if ($value === '') {
+            return 0;
+        }
+
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/\s+/', ' ', (string)$normalized);
+        $normalized = trim((string)$normalized, " \t\n\r\0\x0B*");
+
+        $invalid = [
+            'unavailable',
+            'no book details',
+            'no details',
+            'n/a',
+            'na',
+            'none',
+            'null',
+        ];
+        if (in_array($normalized, $invalid, true)) {
+            return 0;
+        }
+
+        $parts = preg_split('/\s*(?:;|\||\r\n|\r|\n)\s*/', $value);
+        if (!is_array($parts) || count($parts) === 0) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($parts as $part) {
+            $partNorm = strtolower(trim((string)$part));
+            $partNorm = preg_replace('/\s+/', ' ', (string)$partNorm);
+            $partNorm = trim((string)$partNorm, " \t\n\r\0\x0B*");
+            if ($partNorm === '' || in_array($partNorm, $invalid, true)) {
+                continue;
+            }
+            $count += 1;
+        }
+
+        return $count;
     }
 
     /**
@@ -309,27 +376,78 @@ class BMGF_Data_Mapper {
     }
 
     /**
-     * Compute sector data from institutions
+     * Compute region coverage from institutions (equivalent to Summary!A12:B20 matrix).
+     * Uses Region labels with state abbreviations and enrollment = Calc I + Calc II.
      */
-    private static function compute_sectors(array $inst_rows): array {
-        $sectors_calc1 = [];
-        $sectors_calc2 = [];
+    private static function compute_region_coverage(array $inst_rows): array {
+        $regions = []; // raw region label => enrollment
 
         foreach ($inst_rows as $row) {
-            $sector_raw = trim($row['Sector'] ?? '');
-            $sector = self::normalize_sector($sector_raw);
-            if ($sector === '') continue;
+            $region_label = trim($row['Region'] ?? '');
+            if ($region_label === '') continue;
 
             $calc1 = (int)($row['Calc I Enrollment'] ?? 0);
             $calc2 = (int)($row['Calc II Enrollment'] ?? 0);
-
-            $sectors_calc1[$sector] = ($sectors_calc1[$sector] ?? 0) + $calc1;
-            $sectors_calc2[$sector] = ($sectors_calc2[$sector] ?? 0) + $calc2;
+            $regions[$region_label] = ($regions[$region_label] ?? 0) + $calc1 + $calc2;
         }
 
+        arsort($regions);
+
+        $result = [];
+        foreach ($regions as $label => $enrollment) {
+            $result[] = [
+                'name' => self::extract_region_name($label),
+                'label' => $label,
+                'states' => self::extract_region_state_codes($label),
+                'enrollment' => (int)$enrollment,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Compute sector data from institutions
+     */
+    private static function compute_sectors(array $inst_rows): array {
+        $sector_institutions = [];
+
+        foreach ($inst_rows as $row) {
+            // Use raw Sector value exactly as provided in All_Institutions column C.
+            $sector = trim($row['Sector'] ?? '');
+            if ($sector === '') continue;
+
+            $inst_id = trim($row['IPED ID'] ?? '');
+            $school = trim($row['School'] ?? '');
+            $inst_key = $inst_id !== '' ? $inst_id : $school;
+            if ($inst_key === '') continue;
+
+            if (!isset($sector_institutions[$sector])) {
+                $sector_institutions[$sector] = [];
+            }
+            $sector_institutions[$sector][$inst_key] = true;
+        }
+
+        $sector_counts = [];
+        foreach ($sector_institutions as $sector => $inst_map) {
+            $sector_counts[$sector] = count($inst_map);
+        }
+
+        $by_institutions = self::to_percentage_array($sector_counts, 'name');
+
+        // Backward compatibility: keep legacy keys, but based on institution distribution.
+        $legacy = array_map(static function(array $row): array {
+            return [
+                'name' => $row['name'],
+                'percentage' => $row['percentage'],
+                'value' => $row['value'],
+            ];
+        }, $by_institutions);
+
         return [
-            'calc1' => self::to_percentage_array($sectors_calc1, 'name'),
-            'calc2' => self::to_percentage_array($sectors_calc2, 'name'),
+            'institutions' => $by_institutions,
+            'calc1' => $legacy,
+            'calc2' => $legacy,
         ];
     }
 
@@ -563,6 +681,7 @@ class BMGF_Data_Mapper {
         $states = [];
         $regions = [];
         $sectors = [];
+        $msi_types = [];
         $publishers = [];
         $periods = [];
         $institutions = [];
@@ -577,21 +696,18 @@ class BMGF_Data_Mapper {
             $sector = trim($row['Sector'] ?? '');
             if ($sector !== '') $sectors[$sector] = true;
 
-            // Publisher filter must come from course-level source (All_Courses -> Publisher_Normalized).
+            $msi_type = trim($row['MSI Type'] ?? ($row['MSI TYPE'] ?? ''));
+            if ($msi_type === '') $msi_type = 'Not MSI';
+            $msi_types[$msi_type] = true;
+
+            // Publisher filter in Institutions Analysis comes from All_Institutions column N (Publisher).
+            $pub = trim($row['Publisher'] ?? ($row['Publisher_Norm'] ?? ($row['Publisher_Normalized'] ?? '')));
+            if ($pub !== '') $publishers[$pub] = true;
         }
 
         foreach ($course_rows as $row) {
             $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state !== '') $states[$state] = true;
-
-            $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
-            if ($region !== '') $regions[$region] = true;
-
-            $sector = trim($row['Sector'] ?? '');
-            if ($sector !== '') $sectors[$sector] = true;
-
-            $pub = trim($row['Publisher_Normalized'] ?? '');
-            if ($pub !== '') $publishers[$pub] = true;
 
             $period = trim($row['Period'] ?? '');
             if ($period !== '') $periods[$period] = true;
@@ -605,6 +721,7 @@ class BMGF_Data_Mapper {
         ksort($states);
         ksort($regions);
         ksort($sectors);
+        ksort($msi_types);
         ksort($publishers);
         ksort($periods);
         ksort($institutions);
@@ -613,6 +730,7 @@ class BMGF_Data_Mapper {
             'states' => array_keys($states),
             'regions' => array_keys($regions),
             'sectors' => array_keys($sectors),
+            'msi_types' => array_keys($msi_types),
             'publishers' => array_keys($publishers),
             'periods' => array_keys($periods),
             'institutions' => array_keys($institutions),
@@ -627,18 +745,34 @@ class BMGF_Data_Mapper {
     private static function compute_state_data(array $inst_rows, array $course_rows): array {
         // Aggregate institution data per state
         $state_inst = []; // state => ['calc1' => int, 'calc2' => int, 'fte' => int, 'institutions' => set]
+        $state_publishers = []; // state => publisher => enrollment (from All_Institutions.Publisher)
 
         foreach ($inst_rows as $row) {
             $state = self::normalize_state(trim($row['State'] ?? ''));
             if ($state === '') continue;
 
             if (!isset($state_inst[$state])) {
-                $state_inst[$state] = ['calc1' => 0, 'calc2' => 0, 'fte' => 0, 'institutions' => []];
+                $state_inst[$state] = [
+                    'calc1' => 0,
+                    'calc2' => 0,
+                    'fte' => 0,
+                    'institutions' => [],
+                    'institution_breakdown' => [],
+                    'size_breakdown' => [],
+                    'region_breakdown' => [],
+                    'msi_breakdown' => [],
+                    'sector_breakdown' => [],
+                    'publisher_breakdown' => [],
+                ];
             }
 
-            $state_inst[$state]['calc1'] += (int)($row['Calc I Enrollment'] ?? 0);
-            $state_inst[$state]['calc2'] += (int)($row['Calc II Enrollment'] ?? 0);
-            $state_inst[$state]['fte'] += (int)($row['FTE Enrollment'] ?? 0);
+            $calc1 = (int)($row['Calc I Enrollment'] ?? 0);
+            $calc2 = (int)($row['Calc II Enrollment'] ?? 0);
+            $fte = (int)($row['FTE Enrollment'] ?? 0);
+
+            $state_inst[$state]['calc1'] += $calc1;
+            $state_inst[$state]['calc2'] += $calc2;
+            $state_inst[$state]['fte'] += $fte;
 
             $inst_id = trim($row['IPED ID'] ?? '');
             $school = trim($row['School'] ?? '');
@@ -646,10 +780,143 @@ class BMGF_Data_Mapper {
             if ($inst_key !== '') {
                 $state_inst[$state]['institutions'][$inst_key] = true;
             }
+
+            if ($school !== '') {
+                if (!isset($state_inst[$state]['institution_breakdown'][$school])) {
+                    $state_inst[$state]['institution_breakdown'][$school] = [
+                        'calc_i' => 0,
+                        'calc_ii' => 0,
+                        'total' => 0,
+                        'fte' => 0,
+                    ];
+                }
+                $state_inst[$state]['institution_breakdown'][$school]['calc_i'] += $calc1;
+                $state_inst[$state]['institution_breakdown'][$school]['calc_ii'] += $calc2;
+                $state_inst[$state]['institution_breakdown'][$school]['total'] += ($calc1 + $calc2);
+                $state_inst[$state]['institution_breakdown'][$school]['fte'] += $fte;
+            }
+
+            $size_category = '';
+            if ($fte > 20000) {
+                $size_category = 'Large (>20K)';
+            } elseif ($fte >= 5000) {
+                $size_category = 'Medium (5-20K)';
+            } elseif ($fte >= 1000) {
+                $size_category = 'Small (1-5K)';
+            } else {
+                $size_category = 'Very Small (<1K)';
+            }
+
+            if (!isset($state_inst[$state]['size_breakdown'][$size_category])) {
+                $state_inst[$state]['size_breakdown'][$size_category] = [
+                    'calc_i' => 0,
+                    'calc_ii' => 0,
+                    'total' => 0,
+                    'fte' => 0,
+                    'institutions' => [],
+                ];
+            }
+            $state_inst[$state]['size_breakdown'][$size_category]['calc_i'] += $calc1;
+            $state_inst[$state]['size_breakdown'][$size_category]['calc_ii'] += $calc2;
+            $state_inst[$state]['size_breakdown'][$size_category]['total'] += ($calc1 + $calc2);
+            $state_inst[$state]['size_breakdown'][$size_category]['fte'] += $fte;
+            if ($inst_key !== '') {
+                $state_inst[$state]['size_breakdown'][$size_category]['institutions'][$inst_key] = true;
+            }
+
+            $region = preg_replace('/\s*\(.*\)$/', '', trim($row['Region'] ?? ''));
+            if ($region !== '') {
+                if (!isset($state_inst[$state]['region_breakdown'][$region])) {
+                    $state_inst[$state]['region_breakdown'][$region] = [
+                        'calc_i' => 0,
+                        'calc_ii' => 0,
+                        'total' => 0,
+                        'fte' => 0,
+                        'institutions' => [],
+                    ];
+                }
+
+                $state_inst[$state]['region_breakdown'][$region]['calc_i'] += $calc1;
+                $state_inst[$state]['region_breakdown'][$region]['calc_ii'] += $calc2;
+                $state_inst[$state]['region_breakdown'][$region]['total'] += ($calc1 + $calc2);
+                $state_inst[$state]['region_breakdown'][$region]['fte'] += $fte;
+                if ($inst_key !== '') {
+                    $state_inst[$state]['region_breakdown'][$region]['institutions'][$inst_key] = true;
+                }
+            }
+
+            $msi_type = trim($row['MSI Type'] ?? ($row['MSI TYPE'] ?? ''));
+            if ($msi_type === '') {
+                $msi_type = 'Not MSI';
+            }
+
+            if (!isset($state_inst[$state]['msi_breakdown'][$msi_type])) {
+                $state_inst[$state]['msi_breakdown'][$msi_type] = [
+                    'calc_i' => 0,
+                    'calc_ii' => 0,
+                    'total' => 0,
+                    'fte' => 0,
+                    'institutions' => [],
+                ];
+            }
+
+            $state_inst[$state]['msi_breakdown'][$msi_type]['calc_i'] += $calc1;
+            $state_inst[$state]['msi_breakdown'][$msi_type]['calc_ii'] += $calc2;
+            $state_inst[$state]['msi_breakdown'][$msi_type]['total'] += ($calc1 + $calc2);
+            $state_inst[$state]['msi_breakdown'][$msi_type]['fte'] += $fte;
+            if ($inst_key !== '') {
+                $state_inst[$state]['msi_breakdown'][$msi_type]['institutions'][$inst_key] = true;
+            }
+
+            $sector = trim($row['Sector'] ?? '');
+            if ($sector !== '') {
+                if (!isset($state_inst[$state]['sector_breakdown'][$sector])) {
+                    $state_inst[$state]['sector_breakdown'][$sector] = [
+                        'calc_i' => 0,
+                        'calc_ii' => 0,
+                        'total' => 0,
+                        'fte' => 0,
+                        'institutions' => [],
+                    ];
+                }
+
+                $state_inst[$state]['sector_breakdown'][$sector]['calc_i'] += $calc1;
+                $state_inst[$state]['sector_breakdown'][$sector]['calc_ii'] += $calc2;
+                $state_inst[$state]['sector_breakdown'][$sector]['total'] += ($calc1 + $calc2);
+                $state_inst[$state]['sector_breakdown'][$sector]['fte'] += $fte;
+                if ($inst_key !== '') {
+                    $state_inst[$state]['sector_breakdown'][$sector]['institutions'][$inst_key] = true;
+                }
+            }
+
+            $publisher = trim($row['Publisher'] ?? ($row['Publisher_Norm'] ?? ($row['Publisher_Normalized'] ?? '')));
+            if ($publisher !== '') {
+                if (!isset($state_inst[$state]['publisher_breakdown'][$publisher])) {
+                    $state_inst[$state]['publisher_breakdown'][$publisher] = [
+                        'calc_i' => 0,
+                        'calc_ii' => 0,
+                        'total' => 0,
+                        'fte' => 0,
+                        'institutions' => [],
+                    ];
+                }
+
+                $state_inst[$state]['publisher_breakdown'][$publisher]['calc_i'] += $calc1;
+                $state_inst[$state]['publisher_breakdown'][$publisher]['calc_ii'] += $calc2;
+                $state_inst[$state]['publisher_breakdown'][$publisher]['total'] += ($calc1 + $calc2);
+                $state_inst[$state]['publisher_breakdown'][$publisher]['fte'] += $fte;
+                if ($inst_key !== '') {
+                    $state_inst[$state]['publisher_breakdown'][$publisher]['institutions'][$inst_key] = true;
+                }
+
+                if (!isset($state_publishers[$state])) {
+                    $state_publishers[$state] = [];
+                }
+                $state_publishers[$state][$publisher] = ($state_publishers[$state][$publisher] ?? 0) + ($calc1 + $calc2);
+            }
         }
 
-        // Aggregate publisher data per state from courses
-        $state_publishers = []; // state => publisher => enrollment
+        // Aggregate course count + period data per state from courses.
         $state_courses = []; // state => course-record count
         $state_periods = []; // state => period => ['total'=>int,'calc_i'=>int,'calc_ii'=>int,'courses'=>int]
 
@@ -662,13 +929,7 @@ class BMGF_Data_Mapper {
 
             if ($state === '') continue;
 
-            if (!isset($state_publishers[$state])) {
-                $state_publishers[$state] = [];
-            }
             $state_courses[$state] = ($state_courses[$state] ?? 0) + 1;
-            if ($publisher !== '') {
-                $state_publishers[$state][$publisher] = ($state_publishers[$state][$publisher] ?? 0) + $enrollment;
-            }
 
             if ($period !== '') {
                 if (!isset($state_periods[$state])) {
@@ -721,6 +982,99 @@ class BMGF_Data_Mapper {
                 ksort($period_breakdown);
             }
 
+            $region_breakdown = [];
+            if (!empty($data['region_breakdown']) && is_array($data['region_breakdown'])) {
+                foreach ($data['region_breakdown'] as $region_name => $region_data) {
+                    $region_breakdown[$region_name] = [
+                        'calc_i' => (int)($region_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($region_data['calc_ii'] ?? 0),
+                        'total' => (int)($region_data['total'] ?? 0),
+                        'fte' => (int)($region_data['fte'] ?? 0),
+                        'institutions' => isset($region_data['institutions']) && is_array($region_data['institutions'])
+                            ? count($region_data['institutions'])
+                            : 0,
+                    ];
+                }
+                ksort($region_breakdown);
+            }
+
+            $institution_breakdown = [];
+            if (!empty($data['institution_breakdown']) && is_array($data['institution_breakdown'])) {
+                foreach ($data['institution_breakdown'] as $institution_name => $institution_data) {
+                    $institution_breakdown[$institution_name] = [
+                        'calc_i' => (int)($institution_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($institution_data['calc_ii'] ?? 0),
+                        'total' => (int)($institution_data['total'] ?? 0),
+                        'fte' => (int)($institution_data['fte'] ?? 0),
+                    ];
+                }
+                ksort($institution_breakdown);
+            }
+
+            $size_breakdown = [];
+            if (!empty($data['size_breakdown']) && is_array($data['size_breakdown'])) {
+                foreach ($data['size_breakdown'] as $size_name => $size_data) {
+                    $size_breakdown[$size_name] = [
+                        'calc_i' => (int)($size_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($size_data['calc_ii'] ?? 0),
+                        'total' => (int)($size_data['total'] ?? 0),
+                        'fte' => (int)($size_data['fte'] ?? 0),
+                        'institutions' => isset($size_data['institutions']) && is_array($size_data['institutions'])
+                            ? count($size_data['institutions'])
+                            : 0,
+                    ];
+                }
+                ksort($size_breakdown);
+            }
+
+            $msi_breakdown = [];
+            if (!empty($data['msi_breakdown']) && is_array($data['msi_breakdown'])) {
+                foreach ($data['msi_breakdown'] as $msi_name => $msi_data) {
+                    $msi_breakdown[$msi_name] = [
+                        'calc_i' => (int)($msi_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($msi_data['calc_ii'] ?? 0),
+                        'total' => (int)($msi_data['total'] ?? 0),
+                        'fte' => (int)($msi_data['fte'] ?? 0),
+                        'institutions' => isset($msi_data['institutions']) && is_array($msi_data['institutions'])
+                            ? count($msi_data['institutions'])
+                            : 0,
+                    ];
+                }
+                ksort($msi_breakdown);
+            }
+
+            $sector_breakdown = [];
+            if (!empty($data['sector_breakdown']) && is_array($data['sector_breakdown'])) {
+                foreach ($data['sector_breakdown'] as $sector_name => $sector_data) {
+                    $sector_breakdown[$sector_name] = [
+                        'calc_i' => (int)($sector_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($sector_data['calc_ii'] ?? 0),
+                        'total' => (int)($sector_data['total'] ?? 0),
+                        'fte' => (int)($sector_data['fte'] ?? 0),
+                        'institutions' => isset($sector_data['institutions']) && is_array($sector_data['institutions'])
+                            ? count($sector_data['institutions'])
+                            : 0,
+                    ];
+                }
+                ksort($sector_breakdown);
+            }
+
+            $publisher_breakdown = [];
+            if (!empty($data['publisher_breakdown']) && is_array($data['publisher_breakdown'])) {
+                foreach ($data['publisher_breakdown'] as $publisher_name => $publisher_data) {
+                    $publisher_breakdown[$publisher_name] = [
+                        'calc_i' => (int)($publisher_data['calc_i'] ?? 0),
+                        'calc_ii' => (int)($publisher_data['calc_ii'] ?? 0),
+                        'total' => (int)($publisher_data['total'] ?? 0),
+                        'fte' => (int)($publisher_data['fte'] ?? 0),
+                        'institutions' => isset($publisher_data['institutions']) && is_array($publisher_data['institutions'])
+                            ? count($publisher_data['institutions'])
+                            : 0,
+                    ];
+                }
+                ksort($publisher_breakdown);
+            }
+
             $entry = [
                 'state' => $state,
                 'code' => $coords['code'],
@@ -745,6 +1099,12 @@ class BMGF_Data_Mapper {
                 'pub3' => $pub_list[2] ?? '',
                 'pub3_enr' => $pub_enr[2] ?? 0,
                 'period_breakdown' => $period_breakdown,
+                'institution_breakdown' => $institution_breakdown,
+                'size_breakdown' => $size_breakdown,
+                'region_breakdown' => $region_breakdown,
+                'msi_breakdown' => $msi_breakdown,
+                'sector_breakdown' => $sector_breakdown,
+                'publisher_breakdown' => $publisher_breakdown,
             ];
 
             $result[] = $entry;
@@ -812,6 +1172,27 @@ class BMGF_Data_Mapper {
     }
 
     /**
+     * Extract clean region name from full label (e.g. "Southeast (AL, ...)" => "Southeast").
+     */
+    private static function extract_region_name(string $label): string {
+        $name = preg_replace('/\s*\(.*\)\s*$/', '', trim($label));
+        return is_string($name) ? trim($name) : trim($label);
+    }
+
+    /**
+     * Extract state/jurisdiction codes from region label parentheses.
+     */
+    private static function extract_region_state_codes(string $label): array {
+        if (!preg_match('/\(([^)]*)\)/', $label, $matches)) {
+            return [];
+        }
+
+        $parts = array_map(static fn($v) => strtoupper(trim($v)), explode(',', $matches[1]));
+        $parts = array_filter($parts, static fn($v) => $v !== '' && preg_match('/^[A-Z]{2}$/', $v));
+        return array_values(array_unique($parts));
+    }
+
+    /**
      * Parse price value from string
      */
     private static function parse_price(string $value): float {
@@ -822,6 +1203,33 @@ class BMGF_Data_Mapper {
         // Remove $ and commas
         $value = preg_replace('/[$,]/', '', $value);
         return (float)$value;
+    }
+
+    /**
+     * Parse a price cell returning null when the value is not a price.
+     * Keeps explicit 0/free values as valid numeric prices.
+     */
+    private static function parse_price_nullable(string $value): ?float {
+        $raw = trim($value);
+        if ($raw === '') {
+            return null;
+        }
+
+        $normalized = strtolower($raw);
+        if (in_array($normalized, ['n/a', 'na', 'null', 'none', 'unavailable', '*no book details*', 'no book details'], true)) {
+            return null;
+        }
+
+        if (in_array($normalized, ['free', 'oer'], true)) {
+            return 0.0;
+        }
+
+        $clean = preg_replace('/[$,\s]/', '', $raw);
+        if ($clean === '' || !preg_match('/^-?\d+(?:\.\d+)?$/', (string)$clean)) {
+            return null;
+        }
+
+        return (float)$clean;
     }
 
     /**

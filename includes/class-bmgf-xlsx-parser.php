@@ -10,6 +10,14 @@ if (!defined('ABSPATH')) {
 }
 
 class BMGF_XLSX_Parser {
+    private const BUILD_ID = 'parser-domxpath-2026-02-18-02';
+
+    /**
+     * Build identifier for runtime diagnostics.
+     */
+    public static function build_id(): string {
+        return self::BUILD_ID;
+    }
 
     /**
      * Parse a file (XLSX or CSV) and return headers + rows
@@ -157,20 +165,30 @@ class BMGF_XLSX_Parser {
             return $shared_strings;
         }
 
-        $ss_tree = @new SimpleXMLElement($ss_xml);
-        if ($ss_tree === false) {
+        if (!class_exists('DOMDocument') || !class_exists('DOMXPath')) {
             return $shared_strings;
         }
 
-        $ns = $ss_tree->getNamespaces(true);
-        $default_ns = $ns[''] ?? 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-        $ss_tree->registerXPathNamespace('s', $default_ns);
+        $dom = new DOMDocument();
+        $loaded = @$dom->loadXML($ss_xml, LIBXML_NONET | LIBXML_COMPACT | LIBXML_PARSEHUGE);
+        if (!$loaded) {
+            return $shared_strings;
+        }
 
-        foreach ($ss_tree->xpath('//s:si') as $si) {
-            $texts = $si->xpath('.//s:t');
+        $xpath = new DOMXPath($dom);
+        $si_nodes = $xpath->query('/*[local-name()="sst"]/*[local-name()="si"]');
+        if ($si_nodes === false || $si_nodes->length === 0) {
+            return $shared_strings;
+        }
+
+        /** @var DOMElement $si */
+        foreach ($si_nodes as $si) {
+            $t_nodes = $xpath->query('.//*[local-name()="t"]', $si);
             $value = '';
-            foreach ($texts as $t) {
-                $value .= (string)$t;
+            if ($t_nodes !== false) {
+                foreach ($t_nodes as $t) {
+                    $value .= (string)$t->nodeValue;
+                }
             }
             $shared_strings[] = $value;
         }
@@ -337,37 +355,48 @@ class BMGF_XLSX_Parser {
      * Parse sheet XML into headers and rows
      */
     private static function parse_sheet_xml(string $sheet_xml, array $shared_strings): array {
-        $sheet = @new SimpleXMLElement($sheet_xml);
-        if ($sheet === false) {
+        if (!class_exists('DOMDocument') || !class_exists('DOMXPath')) {
+            throw new Exception('DOMDocument PHP extension is required to parse worksheet XML.');
+        }
+
+        $dom = new DOMDocument();
+        $loaded = @$dom->loadXML($sheet_xml, LIBXML_NONET | LIBXML_COMPACT | LIBXML_PARSEHUGE);
+        if (!$loaded) {
             throw new Exception('Could not parse worksheet XML.');
         }
 
-        $ns = $sheet->getNamespaces(true);
-        $default_ns = $ns[''] ?? 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-        $sheet->registerXPathNamespace('s', $default_ns);
-
-        $xml_rows = $sheet->xpath('//s:sheetData/s:row');
-        if (empty($xml_rows)) {
+        $xpath = new DOMXPath($dom);
+        $xml_rows = $xpath->query('/*[local-name()="worksheet"]/*[local-name()="sheetData"]/*[local-name()="row"]');
+        if ($xml_rows === false || $xml_rows->length === 0) {
             throw new Exception('No data found in the worksheet.');
         }
 
         $all_rows = [];
         $max_col = 0;
 
+        /** @var DOMElement $xml_row */
         foreach ($xml_rows as $xml_row) {
             $row_data = [];
-            // Parse cells using explicit namespace children for better compatibility
-            // across different SimpleXML namespace/xpath behaviors.
-            $cells = $xml_row->children($default_ns)->c ?? [];
+            $cells = $xpath->query('./*[local-name()="c"]', $xml_row);
+            if ($cells === false) {
+                $all_rows[] = $row_data;
+                continue;
+            }
+
+            /** @var DOMElement $cell */
             foreach ($cells as $cell) {
-                $ref = (string)$cell['r'];
+                $ref = $cell->getAttribute('r');
+                if ($ref === '') {
+                    continue;
+                }
+
                 $col_index = self::col_ref_to_index($ref);
-                $type = (string)$cell['t'];
+                $type = $cell->getAttribute('t');
                 $value = '';
 
-                $val_node = $cell->children($default_ns)->v;
-                if (isset($val_node[0])) {
-                    $raw = (string)$val_node[0];
+                $v_node = $xpath->query('./*[local-name()="v"]', $cell);
+                if ($v_node !== false && $v_node->length > 0) {
+                    $raw = (string)$v_node->item(0)->nodeValue;
                     if ($type === 's') {
                         $idx = (int)$raw;
                         $value = $shared_strings[$idx] ?? '';
@@ -375,27 +404,14 @@ class BMGF_XLSX_Parser {
                         $value = $raw;
                     }
                 } else {
-                    // Check for inline string
-                    $is = $cell->children($default_ns)->is;
-                    if (isset($is[0])) {
-                        // Simple inline string: <is><t>...</t></is>
-                        $t = $is[0]->children($default_ns)->t;
-                        if (isset($t[0])) {
-                            $value = (string)$t[0];
-                        } else {
-                            // Rich inline string: <is><r><t>..</t></r>...</is>
-                            $rich_runs = $is[0]->children($default_ns)->r ?? [];
-                            $parts = [];
-                            foreach ($rich_runs as $run) {
-                                $rt = $run->children($default_ns)->t;
-                                if (isset($rt[0])) {
-                                    $parts[] = (string)$rt[0];
-                                }
-                            }
-                            if (!empty($parts)) {
-                                $value = implode('', $parts);
-                            }
+                    // inline string (including rich text runs)
+                    $t_nodes = $xpath->query('./*[local-name()="is"]//*[local-name()="t"]', $cell);
+                    if ($t_nodes !== false && $t_nodes->length > 0) {
+                        $parts = [];
+                        foreach ($t_nodes as $t_node) {
+                            $parts[] = (string)$t_node->nodeValue;
                         }
+                        $value = implode('', $parts);
                     }
                 }
 
@@ -404,6 +420,7 @@ class BMGF_XLSX_Parser {
                     $max_col = $col_index;
                 }
             }
+
             $all_rows[] = $row_data;
         }
 
