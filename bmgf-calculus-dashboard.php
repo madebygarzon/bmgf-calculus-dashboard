@@ -3,7 +3,7 @@
  * Plugin Name: BMGF Calculus Market Dashboard
  * Plugin URI: https://partnerinpublishing.com
  * Description: Interactive dashboard for Math Education Market Analysis - Calculus textbook market data visualization.
- * Version: 30.0.0
+ * Version: 32.0.0
  * Author: Team Dev PIP
  * Author URI: https://partnerinpublishing.com
  * License: GPL v2 or later
@@ -60,6 +60,7 @@ class BMGF_Calculus_Dashboard {
     public function register_shortcodes(): void {
         add_shortcode('bmgf_dashboard', [$this, 'render_dashboard']);
         add_shortcode('bmgf_dashboard_page', [$this, 'render_dashboard_page']);
+        add_shortcode('bmgf_dashboard_review', [$this, 'render_review_dashboard']);
     }
 
     /**
@@ -67,7 +68,8 @@ class BMGF_Calculus_Dashboard {
      */
     public function enqueue_assets(): void {
         if (has_shortcode(get_post()->post_content ?? '', 'bmgf_dashboard') ||
-            has_shortcode(get_post()->post_content ?? '', 'bmgf_dashboard_page')) {
+            has_shortcode(get_post()->post_content ?? '', 'bmgf_dashboard_page') ||
+            has_shortcode(get_post()->post_content ?? '', 'bmgf_dashboard_review')) {
 
             wp_enqueue_style(
                 'bmgf-dashboard-style',
@@ -101,6 +103,7 @@ class BMGF_Calculus_Dashboard {
      */
     public function add_query_vars(array $vars): array {
         $vars[] = 'bmgf_chart';
+        $vars[] = 'bmgf_annotate';
         return $vars;
     }
 
@@ -109,6 +112,7 @@ class BMGF_Calculus_Dashboard {
      */
     public function handle_chart_requests(): void {
         $chart = get_query_var('bmgf_chart');
+        $annotation_mode = isset($_GET['annotate']) && $_GET['annotate'] === '1';
 
         if (!empty($chart)) {
             $chart = sanitize_file_name($chart);
@@ -118,10 +122,21 @@ class BMGF_Calculus_Dashboard {
                 $content = file_get_contents($chart_path);
 
                 // Update asset paths
-                $content = $this->update_asset_paths($content);
+                $content = $this->update_asset_paths($content, $annotation_mode);
 
                 // Inject dynamic data from admin panel
                 $content = $this->inject_dynamic_data($content);
+
+                // Inject source-notes layer for review mode only.
+                $annotatable_pages = [
+                    'cover_page.html',
+                    'tab2_enrollment_analysis.html',
+                    'tab3_institutions_analysis.html',
+                    'tab4_textbook_analysis.html',
+                ];
+                if ($annotation_mode && in_array($chart, $annotatable_pages, true)) {
+                    $content = $this->inject_annotation_tools($content);
+                }
 
                 header('Content-Type: text/html; charset=utf-8');
                 echo $content;
@@ -152,10 +167,11 @@ class BMGF_Calculus_Dashboard {
     /**
      * Update asset paths in HTML content
      */
-    private function update_asset_paths(string $content): string {
+    private function update_asset_paths(string $content, bool $annotation_mode = false): string {
         $plugin_url = BMGF_DASHBOARD_URL;
         $charts_url = home_url('/bmgf-charts/');
         $asset_version = rawurlencode(BMGF_DASHBOARD_VERSION);
+        $annotation_suffix = $annotation_mode ? '&annotate=1' : '';
 
         // Update relative paths to assets
         $content = str_replace('../assets/', $plugin_url . 'assets/', $content);
@@ -170,6 +186,7 @@ class BMGF_Calculus_Dashboard {
         );
 
         // Update chart iframe sources
+        // Keep inner charts in normal mode even when parent is in review mode.
         $content = preg_replace(
             '/src="([^"]+\.html)"/',
             'src="' . $charts_url . '$1?v=' . $asset_version . '"',
@@ -179,11 +196,369 @@ class BMGF_Calculus_Dashboard {
         // Update navigation hrefs
         $content = preg_replace(
             "/window\.location\.href='([^']+\.html)'/",
-            "window.location.href='" . $charts_url . "$1?v=" . $asset_version . "'",
+            "window.location.href='" . $charts_url . "$1?v=" . $asset_version . $annotation_suffix . "'",
             $content
         );
 
         return $content;
+    }
+
+    /**
+     * Inject review UI to document metric lineage/source notes per page.
+     */
+    private function inject_annotation_tools(string $content): string {
+        $injected = <<<'HTML'
+<style id="bmgf-annotation-style">
+    #bmgf-annotation-toggle {
+        position: fixed;
+        right: 18px;
+        top: 18px;
+        z-index: 99998;
+        border: none;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font: 600 13px/1 'Inter Tight', sans-serif;
+        background: #234A5D;
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 6px 16px rgba(0,0,0,.2);
+    }
+    #bmgf-annotation-panel {
+        position: fixed;
+        right: 18px;
+        top: 62px;
+        width: 360px;
+        max-height: calc(100vh - 84px);
+        overflow: auto;
+        background: #fff;
+        border: 1px solid #d7dde4;
+        border-radius: 14px;
+        box-shadow: 0 12px 28px rgba(0,0,0,.18);
+        z-index: 99997;
+        padding: 12px;
+        font-family: 'Inter Tight', sans-serif;
+    }
+    #bmgf-annotation-panel[hidden] { display: none; }
+    .bmgf-annotation-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .bmgf-annotation-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #234A5D;
+    }
+    .bmgf-annotation-actions button {
+        border: 1px solid #cfd8e3;
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 6px 8px;
+        font-size: 11px;
+        cursor: pointer;
+        color: #234A5D;
+    }
+    .bmgf-annotation-empty {
+        font-size: 12px;
+        color: #6b7280;
+        padding: 10px 2px;
+    }
+    .bmg-annotation-item {
+        border-top: 1px solid #edf0f3;
+        padding-top: 10px;
+        margin-top: 10px;
+    }
+    .bmg-annotation-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #234A5D;
+        margin-bottom: 6px;
+    }
+    .bmg-annotation-item textarea {
+        width: 100%;
+        min-height: 64px;
+        resize: vertical;
+        border: 1px solid #cfd8e3;
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 12px;
+        font-family: 'Inter Tight', sans-serif;
+    }
+    .bmg-annotation-meta {
+        margin-top: 4px;
+        color: #94a3b8;
+        font-size: 10px;
+    }
+</style>
+<script id="bmgf-annotation-script">
+(function() {
+    if (window.__BMGF_ANNOTATION_LOADED__) return;
+    window.__BMGF_ANNOTATION_LOADED__ = true;
+
+    const REVIEW_SELECTORS = [
+        '.kpi-label',
+        '.chart-title-top',
+        '.chart-title-bottom',
+        '.bmgf-kpi-label',
+        '.bmgf-chart-card-title'
+    ];
+
+    const pageId = (location.pathname.split('/').pop() || 'dashboard').toLowerCase();
+    const storagePrefix = 'bmgf_metric_source_notes::' + pageId + '::';
+
+    function normalizeText(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function slugify(value) {
+        return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
+    }
+
+    function annotationKey(id) {
+        return storagePrefix + id;
+    }
+
+    function customItemsKey() {
+        return storagePrefix + 'custom_items';
+    }
+
+    function loadCustomItems() {
+        try {
+            const raw = localStorage.getItem(customItemsKey());
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveCustomItems(items) {
+        localStorage.setItem(customItemsKey(), JSON.stringify(items || []));
+    }
+
+    function getTargets() {
+        const nodes = [];
+        REVIEW_SELECTORS.forEach(selector => {
+            document.querySelectorAll(selector).forEach(el => nodes.push(el));
+        });
+
+        const out = [];
+        const seen = new Map();
+        nodes.forEach((el, idx) => {
+            const label = normalizeText(el.textContent || '');
+            if (!label) return;
+            const slug = slugify(label);
+            const count = (seen.get(slug) || 0) + 1;
+            seen.set(slug, count);
+            const id = count > 1 ? (slug + '-' + count) : slug;
+            out.push({ id, label, element: el, index: idx });
+        });
+        return out;
+    }
+
+    function createPanel(targets) {
+        const toggle = document.createElement('button');
+        toggle.id = 'bmgf-annotation-toggle';
+        toggle.type = 'button';
+        toggle.textContent = 'Metric Notes';
+
+        const panel = document.createElement('aside');
+        panel.id = 'bmgf-annotation-panel';
+        panel.hidden = false;
+
+        const head = document.createElement('div');
+        head.className = 'bmgf-annotation-head';
+        head.innerHTML = '<div class="bmgf-annotation-title">Metric Source Notes</div>';
+
+        const actions = document.createElement('div');
+        actions.className = 'bmgf-annotation-actions';
+        const downloadBtn = document.createElement('button');
+        downloadBtn.type = 'button';
+        downloadBtn.textContent = 'Download JSON';
+        actions.appendChild(downloadBtn);
+
+        const addOtherBtn = document.createElement('button');
+        addOtherBtn.type = 'button';
+        addOtherBtn.textContent = 'Add Other';
+        actions.appendChild(addOtherBtn);
+        head.appendChild(actions);
+        panel.appendChild(head);
+
+        if (!targets.length) {
+            const empty = document.createElement('div');
+            empty.className = 'bmgf-annotation-empty';
+            empty.textContent = 'No metrics found on this page.';
+            panel.appendChild(empty);
+        }
+
+        targets.forEach(target => {
+            const wrap = document.createElement('div');
+            wrap.className = 'bmg-annotation-item';
+
+            const label = document.createElement('div');
+            label.className = 'bmg-annotation-label';
+            label.textContent = target.label;
+
+            const textarea = document.createElement('textarea');
+            textarea.placeholder = 'Ej: Esta métrica viene de la suma de la columna X, página Y, archivo Z.';
+            textarea.value = localStorage.getItem(annotationKey(target.id)) || '';
+            textarea.addEventListener('input', () => {
+                localStorage.setItem(annotationKey(target.id), textarea.value);
+            });
+
+            const meta = document.createElement('div');
+            meta.className = 'bmg-annotation-meta';
+            meta.textContent = 'id: ' + target.id;
+
+            wrap.appendChild(label);
+            wrap.appendChild(textarea);
+            wrap.appendChild(meta);
+            panel.appendChild(wrap);
+        });
+
+        const customSection = document.createElement('div');
+        customSection.className = 'bmg-annotation-item';
+        const customTitle = document.createElement('div');
+        customTitle.className = 'bmg-annotation-label';
+        customTitle.textContent = 'Otros';
+        customSection.appendChild(customTitle);
+        panel.appendChild(customSection);
+
+        const customList = document.createElement('div');
+        customSection.appendChild(customList);
+
+        function renderCustomItems() {
+            customList.innerHTML = '';
+            const items = loadCustomItems();
+            items.forEach((item, idx) => {
+                const wrap = document.createElement('div');
+                wrap.style.marginTop = '8px';
+
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.placeholder = 'Nombre de métrica o filtro';
+                nameInput.value = item.name || '';
+                nameInput.style.width = '100%';
+                nameInput.style.border = '1px solid #cfd8e3';
+                nameInput.style.borderRadius = '8px';
+                nameInput.style.padding = '8px';
+                nameInput.style.fontSize = '12px';
+                nameInput.style.fontFamily = "'Inter Tight', sans-serif";
+
+                const noteInput = document.createElement('textarea');
+                noteInput.placeholder = 'Descripción del origen de datos';
+                noteInput.value = item.note || '';
+                noteInput.style.marginTop = '6px';
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.textContent = 'Remove';
+                removeBtn.style.marginTop = '6px';
+
+                nameInput.addEventListener('input', () => {
+                    const all = loadCustomItems();
+                    all[idx] = { ...(all[idx] || {}), name: nameInput.value, note: noteInput.value };
+                    saveCustomItems(all);
+                });
+
+                noteInput.addEventListener('input', () => {
+                    const all = loadCustomItems();
+                    all[idx] = { ...(all[idx] || {}), name: nameInput.value, note: noteInput.value };
+                    saveCustomItems(all);
+                });
+
+                removeBtn.addEventListener('click', () => {
+                    const all = loadCustomItems();
+                    all.splice(idx, 1);
+                    saveCustomItems(all);
+                    renderCustomItems();
+                });
+
+                wrap.appendChild(nameInput);
+                wrap.appendChild(noteInput);
+                wrap.appendChild(removeBtn);
+                customList.appendChild(wrap);
+            });
+        }
+
+        addOtherBtn.addEventListener('click', () => {
+            const items = loadCustomItems();
+            items.push({ name: '', note: '' });
+            saveCustomItems(items);
+            renderCustomItems();
+        });
+
+        renderCustomItems();
+
+        toggle.addEventListener('click', () => {
+            panel.hidden = !panel.hidden;
+        });
+
+        function buildPayload() {
+            const otherItems = loadCustomItems()
+                .map((item, idx) => ({
+                    id: 'other-' + (idx + 1),
+                    metric: String(item && item.name ? item.name : '').trim(),
+                    note: String(item && item.note ? item.note : '').trim()
+                }))
+                .filter(item => item.metric !== '' || item.note !== '');
+
+            return {
+                page: pageId,
+                generated_at: new Date().toISOString(),
+                notes: targets.map(target => ({
+                    id: target.id,
+                    metric: target.label,
+                    note: localStorage.getItem(annotationKey(target.id)) || ''
+                })),
+                other_notes: otherItems
+            };
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            const payload = buildPayload();
+            const text = JSON.stringify(payload, null, 2);
+            const blob = new Blob([text], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'metric-notes-' + pageId + '.json';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        });
+
+        document.body.appendChild(toggle);
+        document.body.appendChild(panel);
+    }
+
+    function propagateAnnotateToLinks() {
+        document.querySelectorAll('a[href$=".html"], a[href*=".html?"]').forEach(a => {
+            try {
+                const href = a.getAttribute('href');
+                if (!href || /^https?:\/\//i.test(href)) return;
+                const u = new URL(href, window.location.href);
+                if (!u.pathname.endsWith('.html')) return;
+                u.searchParams.set('annotate', '1');
+                a.setAttribute('href', u.toString());
+            } catch (e) {}
+        });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        // Review mode must keep top navigation visible even inside shortcode iframe.
+        document.documentElement.classList.remove('in-iframe');
+        propagateAnnotateToLinks();
+        createPanel(getTargets());
+    });
+})();
+</script>
+HTML;
+
+        if (strpos($content, '</body>') !== false) {
+            return str_replace('</body>', $injected . "\n</body>", $content);
+        }
+
+        return $content . $injected;
     }
 
     /**
@@ -225,6 +600,34 @@ class BMGF_Calculus_Dashboard {
      */
     public function render_dashboard_page(array $atts = []): string {
         return $this->render_cover_page('auto');
+    }
+
+    /**
+     * Render review clone dashboard with metric-source inputs.
+     */
+    public function render_review_dashboard(array $atts = []): string {
+        $atts = shortcode_atts([
+            'height' => '1900px',
+            'page' => 'cover'
+        ], $atts);
+
+        $page_map = [
+            'cover' => 'cover_page.html',
+            'enrollment' => 'tab2_enrollment_analysis.html',
+            'institutions' => 'tab3_institutions_analysis.html',
+            'textbooks' => 'tab4_textbook_analysis.html'
+        ];
+
+        $chart_file = $page_map[$atts['page']] ?? 'cover_page.html';
+        $chart_url = home_url('/bmgf-charts/' . $chart_file . '?v=' . rawurlencode(BMGF_DASHBOARD_VERSION) . '&annotate=1');
+
+        return sprintf(
+            '<div class="bmgf-dashboard-wrapper bmgf-dashboard-review" style="width:100%%;max-width:1280px;margin:0 auto;">
+                <iframe src="%s" style="width:100%%;height:%s;border:none;display:block;" title="BMGF Calculus Dashboard Review"></iframe>
+            </div>',
+            esc_url($chart_url),
+            esc_attr($atts['height'])
+        );
     }
 
     /**
