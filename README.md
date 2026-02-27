@@ -155,4 +155,4 @@ Si faltan columnas requeridas, la carga falla con mensaje de error detallado.
 
 ## Licencia
 
-GPL v2 o posterior.
+MIT
